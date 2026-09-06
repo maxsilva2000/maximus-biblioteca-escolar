@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0B0D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-192.png">
+<title>Máximus Biblioteca Escolar</title>
+<style>
+:root{
+  --fundo:#0D0E10; --card:#16181C; --card2:#1E2127; --topo:#0A0B0D;
+  --ouro:#C9A227; --ouro2:#E7CE84; --prata:#BFC4CC;
+  --texto:#EDEAE3; --soft:#9A9891; --linha:#26292F; --forte:#3A3E45;
+  --disp:#79BF9B; --empr:#87ADE0; --atra:#E0705F; --res:#D9B26A;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--fundo); color:var(--texto); min-height:100vh;
+  font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  padding-bottom:calc(84px + env(safe-area-inset-bottom));
+  -webkit-font-smoothing:antialiased; font-size:15px;
+}
+h1,h2,h3,.serif{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-weight:600;margin:0}
+h1{font-size:21px;letter-spacing:.01em;color:var(--ouro2)}
+h2{font-size:18px;margin-bottom:10px;color:var(--ouro2)}
+h3{font-size:16px;color:var(--texto)}
+p{line-height:1.55}
+.wrap{max-width:660px;margin:0 auto;padding:14px}
+
+header{background:var(--topo);padding:calc(12px + env(safe-area-inset-top)) 14px 12px;position:sticky;top:0;z-index:20;
+ border-bottom:1px solid rgba(201,162,39,.32)}
+.topo{display:flex;align-items:center;gap:11px;max-width:660px;margin:0 auto}
+.topo .marcaico{flex:0 0 auto}
+.topo .txt{flex:1;min-width:0}
+.sub{font-size:11.5px;color:var(--soft);margin-top:2px;letter-spacing:.09em;text-transform:uppercase}
+.voltar{background:transparent;border:1px solid rgba(201,162,39,.5);color:var(--ouro2);border-radius:8px;
+ padding:8px 12px;font:inherit;font-size:13.5px;cursor:pointer}
+
+/* marca na tela inicial, no espírito da logomarca */
+.marca{background:linear-gradient(180deg,#0A0B0D,#131519);border:1px solid rgba(201,162,39,.4);border-radius:12px;
+ padding:22px 16px;text-align:center;margin-bottom:12px}
+.marca .nome{font-family:Georgia,serif;font-size:27px;letter-spacing:.16em;color:var(--ouro);margin-top:10px;font-weight:600}
+.marca .fio{width:76px;height:1px;background:linear-gradient(90deg,transparent,var(--ouro),transparent);margin:9px auto}
+.marca .desc{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#F4F2ED}
+
+.cartao{background:var(--card);border:1px solid var(--linha);border-radius:10px;padding:14px;margin-bottom:12px}
+.ficha{position:relative;padding-left:22px}
+.ficha:before{content:"";position:absolute;left:11px;top:12px;bottom:12px;width:1px;background:var(--ouro);opacity:.5}
+
+.grade{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.tile{background:var(--card);border:1px solid var(--linha);border-radius:10px;padding:16px 12px;text-align:left;
+ font:inherit;font-size:15px;font-weight:600;color:var(--texto);cursor:pointer;min-height:92px;
+ display:flex;flex-direction:column;justify-content:space-between}
+.tile:active{background:var(--card2);border-color:rgba(201,162,39,.45)}
+.ico{font-size:23px;display:block}
+
+.num{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--linha)}
+.num:last-child{border-bottom:0}
+.num b{font-size:19px;font-family:Georgia,serif;font-weight:600;color:var(--ouro2)}
+.rot{font-size:13px;color:var(--soft)}
+.dir{font-size:14px;text-align:right;max-width:60%}
+
+button{font:inherit}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
+ background:linear-gradient(180deg,#E7CE84,#C9A227);color:#14150F;border:0;
+ border-radius:9px;padding:14px 16px;font-size:15px;font-weight:700;cursor:pointer;width:100%;text-align:center}
+.btn:active{opacity:.85}
+.btn.sec{background:transparent;color:var(--ouro2);border:1.5px solid rgba(201,162,39,.65)}
+.btn.per{background:transparent;color:var(--atra);border:1.5px solid rgba(224,112,95,.6)}
+.btn.mini{width:auto;padding:10px 14px;font-size:13.5px}
+.btn[disabled]{opacity:.4;cursor:default}
+.linhab{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+
+.campo{margin-bottom:11px}
+.campo label{display:block;font-size:13px;color:var(--soft);margin-bottom:4px}
+input,select,textarea{width:100%;padding:11px;border:1px solid var(--forte);border-radius:8px;background:var(--card2);
+ font:inherit;font-size:16px;color:var(--texto)}
+input::placeholder,textarea::placeholder{color:#6E6C66}
+textarea{min-height:86px;resize:vertical}
+.dupla{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+.carimbo{display:inline-block;border:1.5px solid;border-radius:4px;padding:3px 8px;font-size:11px;font-weight:800;
+ letter-spacing:.06em;text-transform:uppercase;transform:rotate(-4deg);white-space:nowrap}
+.c-disponivel{color:var(--disp);border-color:var(--disp)}
+.c-emprestado{color:var(--empr);border-color:var(--empr)}
+.c-atrasado{color:var(--atra);border-color:var(--atra)}
+.c-reservado{color:var(--res);border-color:var(--res)}
+
+.reg{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--soft);letter-spacing:.04em}
+.capa{width:52px;height:74px;object-fit:cover;border-radius:4px;border:1px solid var(--forte);background:#232529;
+ flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:20px;color:#6E6C66}
+.item{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--linha);cursor:pointer;
+ width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left;color:inherit}
+.item:last-child{border-bottom:0}
+.meta{font-size:13px;color:var(--soft);margin-top:2px}
+
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--topo);
+ border-top:1px solid rgba(201,162,39,.3);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;padding:8px 1px 10px;font-size:10px;color:var(--soft);cursor:pointer}
+nav button .ico{font-size:19px;margin-bottom:2px}
+nav button.on{color:var(--ouro2);font-weight:700}
+
+.busca{margin-bottom:4px}
+.chips{display:flex;gap:7px;overflow-x:auto;padding:8px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{white-space:nowrap;border:1px solid var(--forte);background:var(--card);border-radius:20px;padding:7px 12px;
+ font-size:13px;color:var(--soft);cursor:pointer}
+.chip.on{background:linear-gradient(180deg,#E7CE84,#C9A227);color:#14150F;border-color:var(--ouro);font-weight:600}
+
+.vazio{text-align:center;color:var(--soft);font-size:14px;padding:32px 16px;line-height:1.55}
+.aviso{background:rgba(201,162,39,.09);border:1px solid rgba(201,162,39,.4);border-radius:9px;padding:11px 13px;
+ font-size:13.5px;line-height:1.5;margin-bottom:12px;color:#E9E3D2}
+.erro{background:rgba(224,112,95,.1);border-color:rgba(224,112,95,.5);color:#F0BDB4}
+.ok{background:rgba(121,191,155,.1);border-color:rgba(121,191,155,.45);color:#BFE3CF}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--linha);white-space:nowrap}
+th{color:var(--ouro2);font-weight:600;font-size:12px}
+
+.folha{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.etiqueta{background:#fff;color:#111;border:1.5px solid #111;border-radius:5px;padding:10px;text-align:center;
+ width:100%;max-width:250px;margin:0 auto}
+.etiqueta .esc{font-size:10px;letter-spacing:.12em;font-weight:700;text-transform:uppercase;color:#111}
+.etiqueta .rg{font-family:Georgia,serif;font-size:24px;margin:2px 0;color:#111}
+.etiqueta .cat{font-size:11px;color:#333;margin-bottom:5px}
+.etiqueta .reg{color:#444}
+.etiqueta svg{display:block;margin:0 auto}
+
+.giro{width:16px;height:16px;border:2px solid var(--forte);border-top-color:var(--ouro);border-radius:50%;
+ animation:g .8s linear infinite;display:inline-block;vertical-align:-3px;margin-right:8px}
+@keyframes g{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.giro{animation-duration:2.5s}}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2.5px solid var(--ouro2);outline-offset:2px}
+
+#scanner{position:fixed;inset:0;background:#08090A;z-index:60;display:none;flex-direction:column}
+#scanner video{flex:1;width:100%;object-fit:cover}
+#scanner .barra{padding:14px;display:flex;gap:10px;background:#08090A}
+#scanner .mira{position:absolute;top:50%;left:8%;right:8%;height:140px;margin-top:-70px;
+ border:2px solid var(--ouro);border-radius:10px}
+
+#toast{position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:50;display:none}
+#toast .aviso{margin:0;box-shadow:0 8px 26px rgba(0,0,0,.55)}
+
+@media print{
+  header,nav,.naoimprime,.marca{display:none!important}
+  body{background:#fff;color:#111;padding:0;font-size:12px}
+  .cartao{border:0;padding:0;margin:0;background:#fff;color:#111}
+  h1,h2,h3,.num b,th{color:#111}
+  .rot,.meta,.reg,td{color:#333}
+  th,td{white-space:normal;border-bottom:1px solid #ccc}
+  .folha{grid-template-columns:repeat(3,1fr);gap:6mm}
+  .etiqueta{page-break-inside:avoid;break-inside:avoid;border:1px dashed #999}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="topo">
+    <span class="marcaico" id="marcaTopo"></span>
+    <div class="txt"><h1 id="titulo">Biblioteca</h1><div class="sub" id="subtitulo"></div></div>
+    <button class="voltar" id="acaoTopo" hidden></button>
+  </div>
+</header>
+
+<main class="wrap" id="app"></main>
+
+<nav id="nav"></nav>
+
+<div id="scanner">
+  <div style="position:relative;flex:1;display:flex"><video id="video" playsinline muted></video><div class="mira"></div></div>
+  <div class="barra"><button class="btn sec" style="color:#F3F1E7;border-color:#F3F1E7" data-acao="fecharScanner">Fechar</button></div>
+</div>
+
+<div id="toast"><div class="aviso" id="toastTxt"></div></div>
+
+<script>
+/* ================================================================
+   Biblioteca escolar - aplicativo autônomo
+   Dados no IndexedDB do próprio aparelho. Funciona offline.
+   ================================================================ */
+
+/* ---------- utilidades ---------- */
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const semAcento = s => String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+const hoje = () => new Date().toISOString().slice(0,10);
+const somarDias = (iso,d) => { const x=new Date(iso+"T12:00:00"); x.setDate(x.getDate()+d); return x.toISOString().slice(0,10); };
+const brDate = iso => iso ? iso.split("-").reverse().join("/") : "";
+const diasAte = iso => Math.round((new Date(iso+"T12:00:00") - new Date(hoje()+"T12:00:00"))/86400000);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const reg = n => String(n).padStart(5,"0");
+const soDigitos = s => String(s||"").replace(/\D/g,"");
+
+const CATEGORIAS = ["Romance","Literatura","Literatura brasileira","Literatura estrangeira","Ficção","Fantasia","Aventura",
+"Suspense","Mistério","Poesia","Biografia","História","Ciências","Educação","Infantojuvenil","Infantil","HQ/Gibis","Outros"];
+
+const NOME_STATUS = {disponivel:"Disponível", emprestado:"Emprestado", atrasado:"Atrasado", reservado:"Reservado"};
+
+/* ---------- marca ----------
+   Monograma no espírito da logomarca Máximus: capelo de formatura sobre o livro
+   aberto, moldura circular, dourado com detalhe prateado. Se o usuário enviar a
+   logomarca dele em Ajustes, ela substitui este desenho. */
+function monograma(tam, mono){
+  const ouro = mono ? "#111" : "#C9A227", ouro2 = mono ? "#111" : "#E7CE84", prata = mono ? "#444" : "#BFC4CC";
+  return `<svg width="${tam}" height="${tam}" viewBox="0 0 100 100" aria-label="Máximus">
+    <circle cx="50" cy="50" r="46" fill="none" stroke="${ouro}" stroke-width="2"/>
+    <circle cx="50" cy="50" r="41" fill="none" stroke="${ouro}" stroke-width=".7" opacity=".6"/>
+    <path d="M50 20 L72 29 L50 38 L28 29 Z" fill="${ouro2}"/>
+    <path d="M64 34 v11 c0 4 -6 6 -14 6 s-14 -2 -14 -6 V34" fill="none" stroke="${ouro}" stroke-width="2.2"/>
+    <path d="M72 29 v13" stroke="${ouro}" stroke-width="1.6"/><circle cx="72" cy="44" r="2.4" fill="${ouro}"/>
+    <path d="M22 60 c10 -4 18 -4 28 1 c10 -5 18 -5 28 -1 v16 c-10 -4 -18 -4 -28 1 c-10 -5 -18 -5 -28 -1 Z"
+      fill="none" stroke="${prata}" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="M50 61 v16" stroke="${ouro}" stroke-width="2"/>
+  </svg>`;
+}
+function marcaImg(estilo, mono){
+  const src = S.cfg.logo || "marca.png";
+  return `<img src="${src}" alt="Máximus" style="${estilo}${mono?";filter:brightness(0)":""}"
+    onerror="this.outerHTML=monograma(${mono?22:34}${mono?",true":""})">`;
+}
+function marcaTopo(){ return marcaImg("width:36px;height:36px;object-fit:contain"); }
+
+/* ---------- banco de dados ---------- */
+let DB = null;
+function abrirDB(){
+  return new Promise((ok,err)=>{
+    const r = indexedDB.open("biblioteca", 1);
+    r.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains("obras")) db.createObjectStore("obras",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("alunos")) db.createObjectStore("alunos",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("emprestimos")) db.createObjectStore("emprestimos",{keyPath:"id"});
+      if(!db.objectStoreNames.contains("config")) db.createObjectStore("config",{keyPath:"chave"});
+    };
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => err(r.error);
+  });
+}
+const tx = (loja, modo="readonly") => DB.transaction(loja, modo).objectStore(loja);
+const pedir = req => new Promise((ok,err)=>{ req.onsuccess=()=>ok(req.result); req.onerror=()=>err(req.error); });
+const todos = loja => pedir(tx(loja).getAll());
+const guardar = (loja,obj) => pedir(tx(loja,"readwrite").put(obj));
+const apagar = (loja,id) => pedir(tx(loja,"readwrite").delete(id));
+const limpar = loja => pedir(tx(loja,"readwrite").clear());
+
+/* ---------- estado ---------- */
+const S = { obras:[], alunos:[], emprestimos:[], cfg:{chave:"config", escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", logo:"", pin:""} };
+let tela = "inicio";
+let ctx = {};        // contexto da tela (id aberto, filtros, rascunhos)
+
+async function carregar(){
+  DB = await abrirDB();
+  S.obras = await todos("obras");
+  S.alunos = await todos("alunos");
+  S.emprestimos = await todos("emprestimos");
+  const c = await pedir(tx("config").get("config"));
+  if(c) S.cfg = Object.assign(S.cfg, c);
+}
+const salvarCfg = () => guardar("config", S.cfg);
+
+/* ---------- derivados ---------- */
+function statusDe(registro){
+  const e = S.emprestimos.find(e => e.registro===registro && !e.devolucao);
+  if(e) return diasAte(e.prevista) < 0 ? "atrasado" : "emprestado";
+  const o = obraDoRegistro(registro);
+  const x = o && o.exemplares.find(x => x.registro===registro);
+  return (x && x.reservado) ? "reservado" : "disponivel";
+}
+const obraDoRegistro = r => S.obras.find(o => o.exemplares.some(x => x.registro===r));
+const aluno = i => S.alunos.find(a => a.id===i);
+const obra = i => S.obras.find(o => o.id===i);
+const emprestimoAberto = r => S.emprestimos.find(e => e.registro===r && !e.devolucao);
+
+function totais(){
+  const st = S.obras.flatMap(o => o.exemplares.map(x => statusDe(x.registro)));
+  return { livros:st.length, titulos:S.obras.length,
+    disponiveis:st.filter(s=>s==="disponivel").length,
+    emprestados:st.filter(s=>s==="emprestado").length,
+    atrasados:st.filter(s=>s==="atrasado").length,
+    alunos:S.alunos.length };
+}
+
+/* ---------- avisos ---------- */
+let tToast;
+function avisar(txt, tipo="ok"){
+  const t = $("#toast"), c = $("#toastTxt");
+  c.className = "aviso " + (tipo==="erro" ? "erro" : tipo==="ok" ? "ok" : "");
+  c.textContent = txt;
+  t.style.display = "block";
+  clearTimeout(tToast);
+  tToast = setTimeout(()=> t.style.display="none", 3800);
+}
+
+/* ================================================================
+   Identificação de livros
+   ================================================================ */
+
+/* Lê código de barras de um arquivo de imagem (ISBN, etiqueta) */
+async function lerCodigo(arquivoOuBitmap){
+  if(!("BarcodeDetector" in window)) return null;
+  try{
+    const d = new BarcodeDetector({formats:["ean_13","ean_8","code_39","code_128","qr_code","upc_a"]});
+    const bmp = arquivoOuBitmap instanceof Blob ? await createImageBitmap(arquivoOuBitmap) : arquivoOuBitmap;
+    const r = await d.detect(bmp);
+    return r.length ? r[0].rawValue : null;
+  }catch(e){ return null; }
+}
+
+const MAPA_CAT = [
+  [/juvenil|young adult/i,"Infantojuvenil"],[/juvenile|children|infantil|picture book/i,"Infantil"],
+  [/comic|graphic novel|manga/i,"HQ/Gibis"],[/poetry|poesia/i,"Poesia"],[/biograph|autobiograph|memoir/i,"Biografia"],
+  [/history|históri/i,"História"],[/science|ciênc|matemát|física|química|biolog/i,"Ciências"],
+  [/education|pedagog|teaching|educa/i,"Educação"],[/fantasy|fantas/i,"Fantasia"],
+  [/mystery|mistério|detective/i,"Mistério"],[/thriller|suspense/i,"Suspense"],[/adventure|aventura/i,"Aventura"],
+  [/romance|love stor/i,"Romance"],[/brazilian|brasileira/i,"Literatura brasileira"],
+  [/fiction|ficção/i,"Ficção"],[/literary|literatura/i,"Literatura"]
+];
+const adivinharCategoria = txt => (MAPA_CAT.find(([re]) => re.test(txt||"")) || [,""])[1];
+
+/* Busca bibliográfica gratuita: Google Books e Open Library */
+async function buscarBiblio({isbn, texto}){
+  const limpo = soDigitos(isbn);
+  const q = limpo ? "isbn:"+limpo : encodeURIComponent(texto||"");
+  if(!q) return null;
+  try{
+    const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q="+q);
+    const j = await r.json();
+    const v = j.items && j.items[0] && j.items[0].volumeInfo;
+    if(v) return {
+      titulo: v.title + (v.subtitle ? ": "+v.subtitle : ""),
+      autor: (v.authors||[]).join(", "),
+      editora: v.publisher || "",
+      ano: (v.publishedDate||"").slice(0,4),
+      isbn: limpo || ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
+      paginas: v.pageCount ? String(v.pageCount) : "",
+      sinopse: (v.description||"").slice(0,600),
+      categoria: adivinharCategoria((v.categories||[]).join(" ") + " " + (v.description||"")),
+      capaUrl: v.imageLinks ? (v.imageLinks.thumbnail||"").replace("http://","https://") : "",
+      fonte: "Google Books"
+    };
+  }catch(e){}
+  if(limpo){
+    try{
+      const r = await fetch("https://openlibrary.org/api/books?format=json&jscmd=data&bibkeys=ISBN:"+limpo);
+      const j = await r.json();
+      const v = j["ISBN:"+limpo];
+      if(v) return {
+        titulo: v.title || "", autor: (v.authors||[]).map(a=>a.name).join(", "),
+        editora: (v.publishers||[]).map(p=>p.name).join(", "), ano: (v.publish_date||"").slice(-4),
+        isbn: limpo, paginas: v.number_of_pages ? String(v.number_of_pages) : "", sinopse: "",
+        categoria: adivinharCategoria((v.subjects||[]).map(s=>s.name).join(" ")),
+        capaUrl: v.cover ? v.cover.medium : "", fonte: "Open Library"
+      };
+    }catch(e){}
+  }
+  return null;
+}
+
+/* Identificação por foto da capa, usando IA */
+const PROMPT = `Você recebe fotos da capa ou contracapa de um livro, e/ou um texto de busca.
+Identifique a obra e responda APENAS com um objeto JSON, sem markdown e sem comentários:
+{"titulo":"","autor":"","editora":"","ano":"","isbn":"","edicao":"","categoria":"","paginas":"","sinopse":"","confianca":"alta|media|baixa"}
+Regras: "categoria" deve ser exatamente um destes valores: `+CATEGORIAS.join(", ")+`.
+"sinopse" com 2 ou 3 frases em português do Brasil. "ano" e "paginas" apenas números.
+Nunca invente ISBN: se não estiver legível na imagem, use "". Se não identificar, devolva campos vazios e confianca "baixa".`;
+
+async function identificarPorFoto(imagensBase64, texto){
+  const content = imagensBase64.map(data => ({type:"image", source:{type:"base64", media_type:"image/jpeg", data}}));
+  content.push({type:"text", text: PROMPT + (texto ? "\nTexto informado: "+texto : "")});
+  const headers = {"Content-Type":"application/json"};
+  if(S.cfg.apiKey){
+    headers["x-api-key"] = S.cfg.apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    headers["anthropic-dangerous-direct-browser-access"] = "true";
+  }
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST", headers,
+    body: JSON.stringify({model:"claude-sonnet-4-6", max_tokens:1000, messages:[{role:"user", content}]})
+  });
+  if(!r.ok) throw new Error(r.status===401 || r.status===403
+    ? "A chave da IA não foi aceita. Confira em Ajustes."
+    : "A identificação por foto não respondeu. Use o código de barras ou preencha à mão.");
+  const j = await r.json();
+  const txt = (j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+  const i = txt.indexOf("{"), f = txt.lastIndexOf("}");
+  if(i<0) throw new Error("Não consegui ler a resposta. Preencha os campos à mão.");
+  return JSON.parse(txt.slice(i, f+1));
+}
+
+/* ---------- imagem ---------- */
+function reduzir(file, largura, qual){
+  return new Promise((ok,err)=>{
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const e = Math.min(1, largura/img.width);
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width*e); c.height = Math.round(img.height*e);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        ok(c.toDataURL("image/jpeg", qual));
+      };
+      img.onerror = () => err(new Error("Não consegui abrir a imagem."));
+      img.src = fr.result;
+    };
+    fr.onerror = () => err(new Error("Não consegui ler o arquivo."));
+    fr.readAsDataURL(file);
+  });
+}
+const base64 = d => d.split(",")[1];
+
+/* ---------- código de barras Code 39 para as etiquetas ---------- */
+const C39 = {"0":"101001101101","1":"110100101011","2":"101100101011","3":"110110010101","4":"101001101011",
+"5":"110100110101","6":"101100110101","7":"101001011011","8":"110100101101","9":"101100101101","A":"110101001011",
+"B":"101101001011","C":"110110100101","D":"101011001011","E":"110101100101","F":"101101100101","G":"101010011011",
+"H":"110101001101","I":"101101001101","J":"101011001101","K":"110101010011","L":"101101010011","M":"110110101001",
+"N":"101011010011","O":"110101101001","P":"101101101001","Q":"101010110011","R":"110101011001","S":"101101011001",
+"T":"101011011001","U":"110010101011","V":"100110101011","W":"110011010101","X":"100101101011","Y":"110010110101",
+"Z":"100110110101","-":"100101011011",".":"110010101101"," ":"100110101101","*":"100101101101"};
+function svgBarras(valor, altura=40){
+  const seq = ("*"+String(valor).toUpperCase()+"*").split("").map(c=>C39[c]||C39["-"]).join("0");
+  const w = 1.6; let x = 0, r = "";
+  for(const b of seq){ if(b==="1") r += `<rect x="${x}" y="0" width="${w}" height="${altura}" fill="#111"/>`; x += w; }
+  return `<svg viewBox="0 0 ${x} ${altura}" width="200" height="${altura}" preserveAspectRatio="none">${r}</svg>`;
+}
+
+/* ================================================================
+   Navegação e desenho das telas
+   ================================================================ */
+const TITULOS = {inicio:()=>S.cfg.escola||"Máximus", cadastro:()=>"Cadastrar livro", acervo:()=>"Acervo", obra:()=>"Ficha do livro",
+  emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos", aluno:()=>"Ficha do aluno",
+  relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiqueta"};
+const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos", etiqueta:"obra"};
+
+function ir(t, dados){
+  tela = t;
+  ctx = Object.assign({}, dados||{});
+  if(t==="cadastro") ctx = Object.assign({form:formVazio(), fotos:[], qtd:1}, dados||{});
+  window.scrollTo(0,0);
+  desenhar();
+}
+const formVazio = () => ({titulo:"",autor:"",editora:"",ano:"",isbn:"",edicao:"",categoria:"",paginas:"",sinopse:"",
+  capa:"",capaUrl:"",estante:"",prateleira:"",secao:""});
+
+const ABAS = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
+  ["emprestimos","📖","Empréstimos"],["alunos","🎓","Alunos"],["relatorios","📊","Relatórios"]];
+
+function desenhar(){
+  $("#titulo").textContent = (TITULOS[tela]||(()=>"Biblioteca"))();
+  $("#subtitulo").textContent = tela==="inicio" ? "Máximus · Biblioteca Escolar" : "";
+  $("#marcaTopo").innerHTML = marcaTopo();
+  const b = $("#acaoTopo");
+  if(VOLTA[tela]){ b.hidden=false; b.textContent="Voltar"; b.dataset.acao="voltar"; }
+  else if(tela==="inicio"){ b.hidden=false; b.textContent="Ajustes"; b.dataset.acao="ajustes"; }
+  else b.hidden = true;
+
+  $("#app").innerHTML = (TELAS[tela]||(()=>""))();
+  $("#nav").innerHTML = ABAS.map(([t,i,n]) =>
+    `<button data-acao="aba" data-t="${t}" class="${tela===t?"on":""}"><span class="ico">${i}</span>${n}</button>`).join("");
+  if(TELAS_DEPOIS[tela]) TELAS_DEPOIS[tela]();
+}
+
+const TELAS = {}, TELAS_DEPOIS = {};
+
+/* ---------- início ---------- */
+TELAS.inicio = () => {
+  const t = totais();
+  const abertos = S.emprestimos.filter(e=>!e.devolucao);
+  const atras = abertos.filter(e=>diasAte(e.prevista)<0);
+  const venc = abertos.filter(e=>diasAte(e.prevista)>=0 && diasAte(e.prevista)<=2);
+
+  const cont = {};
+  S.emprestimos.forEach(e => { const o=obraDoRegistro(e.registro); if(o) cont[o.id]=(cont[o.id]||0)+1; });
+  const top = Object.entries(cont).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([id,n])=>[obra(id),n]).filter(x=>x[0]);
+
+  const cat = {};
+  S.obras.forEach(o => { const k=o.categoria||"Sem categoria"; cat[k]=(cat[k]||0)+o.exemplares.length; });
+  const cats = Object.entries(cat).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  return `
+  <div class="marca">
+    ${marcaImg("width:132px;height:132px;object-fit:contain;display:block;margin:0 auto")}
+    <div class="nome">MÁXIMUS</div>
+    <div class="fio"></div>
+    <div class="desc">Biblioteca Escolar</div>
+  </div>
+  <div class="cartao ficha">
+    <div class="num"><span class="rot">📚 Total de livros</span><b>${t.livros}</b></div>
+    <div class="num"><span class="rot">📗 Disponíveis</span><b>${t.disponiveis}</b></div>
+    <div class="num"><span class="rot">📖 Emprestados</span><b>${t.emprestados}</b></div>
+    <div class="num"><span class="rot">🔴 Atrasados</span><b>${t.atrasados}</b></div>
+    <div class="num"><span class="rot">🎓 Alunos cadastrados</span><b>${t.alunos}</b></div>
+  </div>
+  ${(atras.length||venc.length) ? `<div class="aviso">
+      ${atras.length?`<div><b>${atras.length}</b> ${atras.length===1?"livro atrasado":"livros atrasados"}.</div>`:""}
+      ${venc.length?`<div><b>${venc.length}</b> ${venc.length===1?"devolução":"devoluções"} nos próximos dias.</div>`:""}
+      <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="emprestimos">Ver devoluções</button>
+    </div>`:""}
+  <div class="grade">
+    <button class="tile" data-acao="aba" data-t="cadastro"><span class="ico">📷</span><span>Cadastrar por foto</span></button>
+    <button class="tile" data-acao="aba" data-t="acervo"><span class="ico">🔎</span><span>Pesquisar livro</span></button>
+    <button class="tile" data-acao="scanBusca"><span class="ico">📇</span><span>Escanear etiqueta</span></button>
+    <button class="tile" data-acao="aba" data-t="emprestimos"><span class="ico">📖</span><span>Empréstimos</span></button>
+    <button class="tile" data-acao="aba" data-t="alunos"><span class="ico">🎓</span><span>Alunos</span></button>
+    <button class="tile" data-acao="aba" data-t="relatorios"><span class="ico">📊</span><span>Relatórios</span></button>
+  </div>
+  ${top.length?`<div class="cartao"><h2>Mais emprestados</h2>${top.map(([o,n])=>
+    `<div class="num"><span class="serif" style="font-size:14.5px">${esc(o.titulo)}</span><b>${n}</b></div>`).join("")}</div>`:""}
+  ${cats.length?`<div class="cartao"><h2>Categorias com mais livros</h2>${cats.map(([c,n])=>
+    `<div class="num"><span class="rot">${esc(c)}</span><b>${n}</b></div>`).join("")}</div>`:""}
+  `;
+};
+
+/* ---------- cadastro ---------- */
+TELAS.cadastro = () => {
+  const f = ctx.form, prox = S.cfg.proxReg;
+  const campo = (rot,nome,extra="") => `<div class="campo"><label>${rot}</label>
+    <input data-campo="${nome}" value="${esc(f[nome])}" ${extra}></div>`;
+  return `
+  <div class="cartao">
+    <h2>1. Identifique o livro</h2>
+    <p class="rot" style="margin-top:0">O caminho mais certeiro é o código de barras da contracapa. A foto da capa também funciona.</p>
+    <div class="linhab">
+      <button class="btn mini" data-acao="scanISBN">📷 Escanear código</button>
+      <button class="btn mini sec" data-acao="fotoCapa">🖼️ Foto da capa</button>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="arqCapa" hidden>
+    <div id="fotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${
+      ctx.fotos.map((x,i)=>`<img class="capa" style="width:64px;height:92px" src="${x.thumb}" alt="foto ${i+1}">`).join("")}</div>
+    <div class="campo"><label>Ou digite o ISBN ou o título</label>
+      <input id="buscaLivro" placeholder="9788522008731 ou O Pequeno Príncipe"></div>
+    <button class="btn" data-acao="buscarDados">Buscar dados do livro</button>
+    <div id="statusBusca"></div>
+  </div>
+
+  <div class="cartao">
+    <h2>2. Confira e corrija</h2>
+    <div class="aviso" style="${f.titulo?"display:none":""}">Nada é salvo antes de você conferir. Todos os campos podem ser editados.</div>
+    ${campo("Título","titulo")}
+    ${campo("Autor","autor")}
+    <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
+    <div class="dupla">${campo("ISBN","isbn")}${campo("Edição","edicao")}</div>
+    <div class="dupla">
+      <div class="campo"><label>Categoria</label><select data-campo="categoria">
+        <option value="">Selecione</option>
+        ${CATEGORIAS.map(c=>`<option ${f.categoria===c?"selected":""}>${c}</option>`).join("")}
+      </select></div>
+      ${campo("Páginas","paginas")}
+    </div>
+    <div class="campo"><label>Sinopse</label><textarea data-campo="sinopse">${esc(f.sinopse)}</textarea></div>
+  </div>
+
+  <div class="cartao">
+    <h2>3. Onde fica e quantos exemplares</h2>
+    <div class="dupla">${campo("Estante","estante",'placeholder="03"')}${campo("Prateleira","prateleira",'placeholder="02"')}</div>
+    ${campo("Seção","secao",'placeholder="Literatura"')}
+    <div class="campo"><label>Quantidade de exemplares</label>
+      <input type="number" min="1" max="99" id="qtd" value="${ctx.qtd}"></div>
+    <p class="rot" id="aviReg">Vai receber ${ctx.qtd>1 ? "os registros "+reg(prox)+" a "+reg(prox+ctx.qtd-1) : "o registro "+reg(prox)}.</p>
+    <button class="btn" data-acao="salvarLivro">Salvar no acervo</button>
+  </div>`;
+};
+TELAS_DEPOIS.cadastro = () => {
+  const q = $("#qtd");
+  q.addEventListener("input", () => {
+    ctx.qtd = Math.max(1, Math.min(99, parseInt(q.value)||1));
+    const p = S.cfg.proxReg;
+    $("#aviReg").textContent = "Vai receber " + (ctx.qtd>1 ? "os registros "+reg(p)+" a "+reg(p+ctx.qtd-1) : "o registro "+reg(p)) + ".";
+  });
+};
+
+/* ---------- acervo ---------- */
+const ORDENS = [["registro","Registro"],["titulo","Título"],["autor","Autor"],["categoria","Categoria"],
+  ["editora","Editora"],["ano","Ano"],["local","Localização"]];
+
+function listaAcervo(){
+  const q = semAcento(ctx.q||""), ordem = ctx.ordem||"registro", cat = ctx.cat||"";
+  let lista = S.obras.filter(o => {
+    if(cat && o.categoria!==cat) return false;
+    if(!q) return true;
+    return [o.titulo,o.autor,o.editora,o.categoria,o.isbn,o.secao].some(c=>semAcento(c).includes(q))
+      || o.exemplares.some(x=>x.registro.includes(q));
+  });
+  const chave = o => ordem==="registro" ? (o.exemplares[0]?o.exemplares[0].registro:"zzzzz")
+    : ordem==="local" ? ((o.estante||"zz")+"-"+(o.prateleira||"zz"))
+    : semAcento(o[ordem]||"zzz");
+  return lista.sort((a,b)=> chave(a)<chave(b) ? -1 : 1);
+}
+
+TELAS.acervo = () => {
+  const lista = listaAcervo(), ordem = ctx.ordem||"registro", cat = ctx.cat||"";
+  const usadas = [...new Set(S.obras.map(o=>o.categoria).filter(Boolean))].sort();
+
+  return `
+  <input class="busca" id="qAcervo" value="${esc(ctx.q||"")}" placeholder="Pesquisar por título, autor, registro...">
+  <div class="linhab" style="margin-top:10px">
+    <button class="btn mini sec" data-acao="scanBusca">📇 Escanear etiqueta ou ISBN</button>
+    <button class="btn mini sec" data-acao="etiquetasAcervo">🏷️ Imprimir etiquetas desta lista</button>
+  </div>
+  <div class="chips">${ORDENS.map(([v,n])=>`<button class="chip ${ordem===v?"on":""}" data-acao="ordem" data-v="${v}">${n}</button>`).join("")}</div>
+  ${usadas.length?`<div class="chips"><button class="chip ${!cat?"on":""}" data-acao="cat" data-v="">Todas</button>${
+    usadas.map(c=>`<button class="chip ${cat===c?"on":""}" data-acao="cat" data-v="${esc(c)}">${esc(c)}</button>`).join("")}</div>`:""}
+  <div class="cartao">${
+    lista.length===0 ? `<div class="vazio">${S.obras.length===0
+      ? "O acervo está vazio.<br>Cadastre o primeiro livro pelo código de barras ou pela foto da capa.<div style=\"margin-top:14px\"><button class=\"btn mini\" data-acao=\"aba\" data-t=\"cadastro\">Cadastrar livro</button></div>"
+      : "Nenhum livro encontrado com esse filtro."}</div>`
+    : lista.map(o=>{
+        const st = o.exemplares.map(x=>statusDe(x.registro));
+        const disp = st.filter(s=>s==="disponivel").length;
+        const s = disp>0 ? "disponivel" : st.includes("atrasado") ? "atrasado" : "emprestado";
+        return `<button class="item" data-acao="abrirObra" data-id="${o.id}">
+          ${o.capa||o.capaUrl ? `<img class="capa" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa">📕</span>`}
+          <span style="flex:1;min-width:0">
+            <span class="serif" style="font-size:16px;display:block">${esc(o.titulo)}</span>
+            <span class="meta" style="display:block">${esc(o.autor||"Autor não informado")}${o.ano?", "+esc(o.ano):""}</span>
+            <span class="meta" style="display:block">${esc(o.categoria||"Sem categoria")}${o.estante?" · Estante "+esc(o.estante)+(o.prateleira?", prat. "+esc(o.prateleira):""):""}</span>
+            <span class="reg" style="display:block;margin-top:3px">${o.exemplares.length===1
+              ? "Registro "+o.exemplares[0].registro : o.exemplares.length+" exemplares · "+disp+" disponíveis"}</span>
+          </span>
+          <span class="carimbo c-${s}">${NOME_STATUS[s]}</span>
+        </button>`;
+      }).join("")}</div>`;
+};
+TELAS_DEPOIS.acervo = () => {
+  const i = $("#qAcervo");
+  i.addEventListener("input", () => {
+    ctx.q = i.value;
+    clearTimeout(ctx.t);
+    ctx.t = setTimeout(()=>{ const p=i.selectionStart; desenhar(); const n=$("#qAcervo"); n.focus(); n.setSelectionRange(p,p); }, 220);
+  });
+};
+
+/* ---------- ficha do livro ---------- */
+TELAS.obra = () => {
+  const o = obra(ctx.id);
+  if(!o) return `<div class="vazio">Livro não encontrado.</div>`;
+  if(ctx.editando) return fichaEditar(o);
+  const linhas = [["Categoria",o.categoria],["Editora",o.editora],["Ano",o.ano],["Edição",o.edicao],["ISBN",o.isbn],
+    ["Páginas",o.paginas],["Localização", o.estante ? "Estante "+o.estante+(o.prateleira?", prateleira "+o.prateleira:"")+(o.secao?", seção "+o.secao:"") : ""]]
+    .filter(([,v])=>v);
+  return `
+  <div class="cartao ficha">
+    <div style="display:flex;gap:14px">
+      ${o.capa||o.capaUrl ? `<img class="capa" style="width:70px;height:100px" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa" style="width:70px;height:100px">📕</span>`}
+      <div style="flex:1;min-width:0"><h2 style="margin-bottom:4px">${esc(o.titulo)}</h2>
+        <div class="rot">${esc(o.autor||"Autor não informado")}</div></div>
+    </div>
+    <div style="margin-top:12px">${linhas.map(([k,v])=>`<div class="num"><span class="rot">${k}</span><span class="dir">${esc(v)}</span></div>`).join("")}</div>
+    ${o.sinopse?`<p style="font-size:14px;margin-bottom:0">${esc(o.sinopse)}</p>`:""}
+  </div>
+  <div class="cartao"><h2>Exemplares</h2>
+    ${o.exemplares.map(x=>{
+      const s = statusDe(x.registro), e = emprestimoAberto(x.registro), a = e ? aluno(e.alunoId) : null;
+      return `<div class="num">
+        <div><div class="reg">Registro ${x.registro}</div>
+          ${e?`<div class="meta">${esc(a?a.nome:"Aluno removido")} · até ${brDate(e.prevista)}</div>`:""}</div>
+        <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <span class="carimbo c-${s}">${NOME_STATUS[s]}</span>
+          ${s==="disponivel"?`<button class="chip" data-acao="emprestarDaqui" data-r="${x.registro}">Emprestar</button>`:""}
+          ${e?`<button class="chip" data-acao="devolver" data-e="${e.id}">Devolver</button>`:""}
+          <button class="chip" data-acao="etiqueta" data-r="${x.registro}">Etiqueta</button>
+        </div></div>`;
+    }).join("")}
+    <div class="linhab" style="margin-top:12px">
+      <button class="btn mini sec" data-acao="maisExemplar">Acrescentar exemplar</button>
+      <button class="btn mini sec" data-acao="etiquetasTodas">Imprimir todas as etiquetas</button>
+    </div>
+  </div>
+  <div class="linhab">
+    <button class="btn mini sec" data-acao="editarObra">Editar ficha</button>
+    <button class="btn mini per" data-acao="removerObra">Remover do acervo</button>
+  </div>`;
+};
+
+function fichaEditar(o){
+  const c = (rot,nome) => `<div class="campo"><label>${rot}</label><input data-edit="${nome}" value="${esc(o[nome]||"")}"></div>`;
+  return `<div class="cartao"><h2>Editar ficha</h2>
+    ${c("Título","titulo")}${c("Autor","autor")}
+    <div class="dupla">${c("Editora","editora")}${c("Ano","ano")}</div>
+    <div class="dupla">${c("ISBN","isbn")}${c("Edição","edicao")}</div>
+    <div class="dupla">
+      <div class="campo"><label>Categoria</label><select data-edit="categoria"><option value="">Selecione</option>
+        ${CATEGORIAS.map(x=>`<option ${o.categoria===x?"selected":""}>${x}</option>`).join("")}</select></div>
+      ${c("Páginas","paginas")}
+    </div>
+    <div class="dupla">${c("Estante","estante")}${c("Prateleira","prateleira")}</div>
+    ${c("Seção","secao")}
+    <div class="campo"><label>Sinopse</label><textarea data-edit="sinopse">${esc(o.sinopse||"")}</textarea></div>
+    <div class="linhab"><button class="btn mini" data-acao="salvarEdicao">Salvar alterações</button>
+      <button class="btn mini sec" data-acao="cancelarEdicao">Cancelar</button></div></div>`;
+}
+
+/* ---------- etiquetas ---------- */
+TELAS.etiqueta = () => {
+  const regs = ctx.registros || [];
+  if(!regs.length) return `<div class="vazio">Nenhuma etiqueta para gerar.</div>`;
+  return `
+  <p class="rot naoimprime">${regs.length} etiqueta(s). Imprima em papel adesivo A4 e recorte pelo tracejado.</p>
+  <div class="linhab naoimprime">
+    <button class="btn mini" data-acao="imprimir">Imprimir etiquetas</button>
+    <button class="btn mini sec" data-acao="voltar">Voltar</button>
+  </div>
+  <div class="folha">${regs.map(r => {
+    const o = obraDoRegistro(r) || {};
+    const local = o.estante ? "Est. "+o.estante+(o.prateleira?" · Prat. "+o.prateleira:"") : "";
+    return `<div class="etiqueta">
+      <div style="display:flex;align-items:center;justify-content:center;gap:5px">
+        ${marcaImg("height:20px;object-fit:contain", true)}
+        <div class="esc">${esc(S.cfg.escola)}</div>
+      </div>
+      <div class="rg">${r}</div>
+      <div class="cat">${esc((o.titulo||"").slice(0,34))}</div>
+      <div class="cat" style="font-weight:600">${esc(o.categoria||"Sem categoria")}${local?" · "+esc(local):""}</div>
+      ${svgBarras(r, 34)}
+      <div class="reg">${r}</div>
+    </div>`;
+  }).join("")}</div>
+  <p class="rot naoimprime">O código impresso é lido pela câmera do próprio aplicativo, no botão Escanear etiqueta.</p>`;
+};
+
+/* ---------- empréstimos ---------- */
+TELAS.emprestimos = () => {
+  const aba = ctx.aba || "abertos";
+  const abertos = S.emprestimos.filter(e=>!e.devolucao);
+  const atras = abertos.filter(e=>diasAte(e.prevista)<0);
+  const venc = abertos.filter(e=>diasAte(e.prevista)>=0 && diasAte(e.prevista)<=2);
+  const devs = S.emprestimos.filter(e=>e.devolucao).sort((a,b)=>b.devolucao<a.devolucao?-1:1);
+  const lista = aba==="abertos"?abertos : aba==="atrasados"?atras : aba==="vencendo"?venc : devs;
+
+  return `
+  <button class="btn" data-acao="aba" data-t="novoEmprestimo">Registrar empréstimo</button>
+  <div class="chips">${[["abertos","Em aberto ("+abertos.length+")"],["atrasados","Atrasados ("+atras.length+")"],
+    ["vencendo","Vencendo ("+venc.length+")"],["devolvidos","Devolvidos ("+devs.length+")"]]
+    .map(([v,n])=>`<button class="chip ${aba===v?"on":""}" data-acao="abaEmp" data-v="${v}">${n}</button>`).join("")}</div>
+  <div class="cartao">${lista.length===0?`<div class="vazio">Nada por aqui.</div>` : lista.map(e=>{
+    const o = obraDoRegistro(e.registro), a = aluno(e.alunoId), atraso = !e.devolucao && diasAte(e.prevista)<0;
+    return `<div class="item" style="cursor:default">
+      ${o&&(o.capa||o.capaUrl)?`<img class="capa" src="${o.capa||o.capaUrl}" alt="">`:`<span class="capa">📕</span>`}
+      <div style="flex:1;min-width:0">
+        <h3 class="serif">${esc(o?o.titulo:"Livro removido")}</h3>
+        <div class="meta">${esc(a?a.nome+" · "+(a.turma||"sem turma"):"Aluno removido")}</div>
+        <div class="reg">Registro ${e.registro} · saída ${brDate(e.emprestimo)}</div>
+        <div class="meta" ${atraso?'style="color:var(--carimbo)"':""}>${e.devolucao
+          ? "Devolvido em "+brDate(e.devolucao)
+          : atraso ? "Atrasado há "+Math.abs(diasAte(e.prevista))+" dia(s)" : "Devolver até "+brDate(e.prevista)}</div>
+        ${!e.devolucao?`<div class="linhab" style="margin:8px 0 0">
+          <button class="chip on" data-acao="devolver" data-e="${e.id}">Registrar devolução</button>
+          <button class="chip" data-acao="renovar" data-e="${e.id}">Renovar</button></div>`:""}
+      </div></div>`;
+  }).join("")}</div>`;
+};
+
+TELAS.novoEmprestimo = () => {
+  if(!ctx.registro){
+    const q = semAcento(ctx.q||"");
+    const disp = S.obras.flatMap(o=>o.exemplares.filter(x=>statusDe(x.registro)==="disponivel").map(x=>({o,r:x.registro})))
+      .filter(c=>!q || semAcento(c.o.titulo).includes(q) || semAcento(c.o.autor).includes(q) || c.r.includes(q));
+    return `<div class="cartao"><h2>Qual livro?</h2>
+      <input class="busca" id="qLivro" value="${esc(ctx.q||"")}" placeholder="Título, autor ou registro">
+      <div class="linhab" style="margin-top:10px"><button class="btn mini sec" data-acao="scanEmprestimo">📇 Escanear etiqueta</button></div>
+      ${disp.length===0?`<div class="vazio">Nenhum exemplar disponível com esse filtro.</div>`
+        : disp.slice(0,40).map(c=>`<button class="item" data-acao="escolherLivro" data-r="${c.r}">
+            ${c.o.capa||c.o.capaUrl?`<img class="capa" src="${c.o.capa||c.o.capaUrl}" alt="">`:`<span class="capa">📕</span>`}
+            <span style="flex:1"><span class="serif" style="display:block">${esc(c.o.titulo)}</span>
+            <span class="meta" style="display:block">${esc(c.o.autor)}</span>
+            <span class="reg">Registro ${c.r}</span></span></button>`).join("")}
+      </div>`;
+  }
+  const o = obraDoRegistro(ctx.registro);
+  const q = semAcento(ctx.qa||"");
+  const achados = S.alunos.filter(a=>!q || semAcento(a.nome).includes(q) || semAcento(a.turma).includes(q) || (a.matricula||"").includes(q))
+    .sort((a,b)=>semAcento(a.nome)<semAcento(b.nome)?-1:1);
+  return `<div class="cartao"><h2>Quem vai levar?</h2>
+    <div class="aviso">${esc(o?o.titulo:"Livro")} · registro ${ctx.registro} · devolução em ${S.cfg.prazo} dias</div>
+    <input class="busca" id="qAluno" value="${esc(ctx.qa||"")}" placeholder="Nome, turma ou matrícula">
+    <div style="margin-top:8px">${achados.length===0
+      ? `<div class="vazio">Nenhum aluno encontrado.<div style="margin-top:12px"><button class="btn mini" data-acao="aba" data-t="alunos">Cadastrar aluno</button></div></div>`
+      : achados.slice(0,40).map(a=>`<button class="item" data-acao="confirmarEmprestimo" data-a="${a.id}">
+          <span style="flex:1"><span class="serif" style="display:block;font-size:16px">${esc(a.nome)}</span>
+          <span class="meta">${esc(a.turma||"sem turma")}${a.matricula?" · "+esc(a.matricula):""}</span></span>
+          <span class="chip">Emprestar</span></button>`).join("")}</div>
+    <button class="btn sec" style="margin-top:10px" data-acao="voltarLivro">Voltar</button></div>`;
+};
+TELAS_DEPOIS.novoEmprestimo = () => {
+  const l = $("#qLivro"), a = $("#qAluno");
+  if(l) l.addEventListener("input", ()=>{ ctx.q=l.value; clearTimeout(ctx.t);
+    ctx.t=setTimeout(()=>{const p=l.selectionStart; desenhar(); const n=$("#qLivro"); if(n){n.focus();n.setSelectionRange(p,p);} },220); });
+  if(a) a.addEventListener("input", ()=>{ ctx.qa=a.value; clearTimeout(ctx.t);
+    ctx.t=setTimeout(()=>{const p=a.selectionStart; desenhar(); const n=$("#qAluno"); if(n){n.focus();n.setSelectionRange(p,p);} },220); });
+};
+
+/* ---------- alunos ---------- */
+TELAS.alunos = () => {
+  if(ctx.novo){
+    return `<div class="cartao"><h2>Novo aluno</h2>
+      <div class="campo"><label>Nome</label><input data-aluno="nome" value="${esc(ctx.novo.nome)}"></div>
+      <div class="dupla">
+        <div class="campo"><label>Turma</label><input data-aluno="turma" value="${esc(ctx.novo.turma)}" placeholder="5º Ano H"></div>
+        <div class="campo"><label>Matrícula</label><input data-aluno="matricula" value="${esc(ctx.novo.matricula)}"></div>
+      </div>
+      <div class="campo"><label>Telefone do responsável</label><input data-aluno="telefone" value="${esc(ctx.novo.telefone)}"></div>
+      <div class="linhab"><button class="btn mini" data-acao="salvarAluno">Salvar aluno</button>
+        <button class="btn mini sec" data-acao="cancelarAluno">Cancelar</button></div></div>`;
+  }
+  const q = semAcento(ctx.q||"");
+  const lista = S.alunos.filter(a=>!q || semAcento(a.nome).includes(q) || semAcento(a.turma).includes(q) || (a.matricula||"").includes(q))
+    .sort((a,b)=>semAcento(a.nome)<semAcento(b.nome)?-1:1);
+  return `<button class="btn" data-acao="novoAluno">Cadastrar aluno</button>
+    <input class="busca" style="margin-top:12px" id="qAlunos" value="${esc(ctx.q||"")}" placeholder="Pesquisar por nome, turma ou matrícula">
+    <div class="cartao" style="margin-top:12px">${lista.length===0?`<div class="vazio">Nenhum aluno cadastrado ainda.</div>`
+      : lista.map(a=>{
+        const ab = S.emprestimos.filter(e=>e.alunoId===a.id && !e.devolucao);
+        const at = ab.some(e=>diasAte(e.prevista)<0);
+        return `<button class="item" data-acao="abrirAluno" data-id="${a.id}">
+          <span style="flex:1"><span class="serif" style="display:block;font-size:16px">${esc(a.nome)}</span>
+          <span class="meta" style="display:block">${esc(a.turma||"Sem turma")}${a.matricula?" · matrícula "+esc(a.matricula):""}</span>
+          <span class="reg">${ab.length===0?"Sem livros em mãos":ab.length+" livro(s) em mãos"}</span></span>
+          ${at?`<span class="carimbo c-atrasado">Atrasado</span>`:""}</button>`;
+      }).join("")}</div>`;
+};
+TELAS_DEPOIS.alunos = () => {
+  const i = $("#qAlunos");
+  if(i) i.addEventListener("input", ()=>{ ctx.q=i.value; clearTimeout(ctx.t);
+    ctx.t=setTimeout(()=>{const p=i.selectionStart; desenhar(); const n=$("#qAlunos"); if(n){n.focus();n.setSelectionRange(p,p);} },220); });
+};
+
+TELAS.aluno = () => {
+  const a = aluno(ctx.id);
+  if(!a) return `<div class="vazio">Aluno não encontrado.</div>`;
+  if(ctx.editando){
+    return `<div class="cartao"><h2>Editar aluno</h2>
+      <div class="campo"><label>Nome</label><input data-editaluno="nome" value="${esc(a.nome)}"></div>
+      <div class="dupla">
+        <div class="campo"><label>Turma</label><input data-editaluno="turma" value="${esc(a.turma||"")}"></div>
+        <div class="campo"><label>Matrícula</label><input data-editaluno="matricula" value="${esc(a.matricula||"")}"></div>
+      </div>
+      <div class="campo"><label>Telefone</label><input data-editaluno="telefone" value="${esc(a.telefone||"")}"></div>
+      <div class="linhab"><button class="btn mini" data-acao="salvarEdicaoAluno">Salvar</button>
+        <button class="btn mini sec" data-acao="cancelarEdicaoAluno">Cancelar</button></div></div>`;
+  }
+  const meus = S.emprestimos.filter(e=>e.alunoId===a.id).sort((x,y)=>y.emprestimo<x.emprestimo?-1:1);
+  const ab = meus.filter(e=>!e.devolucao);
+  return `<div class="cartao ficha"><h2 style="margin-bottom:6px">${esc(a.nome)}</h2>
+      <div class="num"><span class="rot">Turma</span><span class="dir">${esc(a.turma||"não informada")}</span></div>
+      <div class="num"><span class="rot">Matrícula</span><span class="dir">${esc(a.matricula||"não informada")}</span></div>
+      ${a.telefone?`<div class="num"><span class="rot">Telefone</span><span class="dir">${esc(a.telefone)}</span></div>`:""}
+      <div class="num"><span class="rot">Livros em mãos</span><b>${ab.length}</b></div></div>
+    <div class="cartao"><h2>Histórico de empréstimos</h2>
+      ${meus.length===0?`<div class="vazio">Este aluno ainda não levou nenhum livro.</div>`:meus.map(e=>{
+        const o = obraDoRegistro(e.registro), atraso = !e.devolucao && diasAte(e.prevista)<0;
+        const s = e.devolucao?"disponivel":atraso?"atrasado":"emprestado";
+        return `<div class="num"><div>
+          <div class="serif" style="font-size:14.5px">${esc(o?o.titulo:"Livro removido")}</div>
+          <div class="reg">${brDate(e.emprestimo)} → ${e.devolucao?brDate(e.devolucao):brDate(e.prevista)}</div></div>
+          <span class="carimbo c-${s}">${e.devolucao?"Devolvido":NOME_STATUS[s]}</span></div>`;
+      }).join("")}</div>
+    <div class="linhab"><button class="btn mini sec" data-acao="editarAluno">Editar</button>
+      <button class="btn mini per" data-acao="removerAluno">Remover</button></div>`;
+};
+
+/* ---------- relatórios ---------- */
+const RELS = [["acervo","Lista completa do acervo"],["categoria","Livros por categoria"],["autor","Livros por autor"],
+  ["emprestados","Livros emprestados"],["atrasados","Livros atrasados"],["disponiveis","Livros disponíveis"],
+  ["historico","Histórico de empréstimos"],["estante","Acervo por estante"],["quantidade","Quantidade por categoria"],
+  ["alunos","Alunos cadastrados"]];
+
+function linhasRelatorio(tipo){
+  const ex = S.obras.flatMap(o=>o.exemplares.map(x=>({
+    Registro:x.registro, Titulo:o.titulo, Autor:o.autor, Editora:o.editora, Ano:o.ano, Categoria:o.categoria,
+    ISBN:o.isbn, Estante:o.estante, Prateleira:o.prateleira, Secao:o.secao, Status:NOME_STATUS[statusDe(x.registro)]})));
+  const daEmp = e => { const o=obraDoRegistro(e.registro), a=aluno(e.alunoId);
+    return {Registro:e.registro, Titulo:o?o.titulo:"", Aluno:a?a.nome:"", Turma:a?a.turma:"", Matricula:a?a.matricula:"",
+      Emprestimo:brDate(e.emprestimo), Previsao:brDate(e.prevista), Devolucao:e.devolucao?brDate(e.devolucao):"",
+      Situacao: e.devolucao?"Devolvido":diasAte(e.prevista)<0?"Atrasado":"Em aberto"}; };
+  switch(tipo){
+    case "acervo": return ex;
+    case "categoria": return [...ex].sort((a,b)=>(a.Categoria||"zz")<(b.Categoria||"zz")?-1:1);
+    case "autor": return [...ex].sort((a,b)=>semAcento(a.Autor)<semAcento(b.Autor)?-1:1);
+    case "estante": return [...ex].sort((a,b)=>((a.Estante||"zz")+a.Prateleira)<((b.Estante||"zz")+b.Prateleira)?-1:1);
+    case "disponiveis": return ex.filter(l=>l.Status==="Disponível");
+    case "emprestados": return S.emprestimos.filter(e=>!e.devolucao).map(daEmp);
+    case "atrasados": return S.emprestimos.filter(e=>!e.devolucao && diasAte(e.prevista)<0).map(daEmp);
+    case "historico": return S.emprestimos.map(daEmp);
+    case "alunos": return S.alunos.map(a=>({Nome:a.nome, Turma:a.turma, Matricula:a.matricula, Telefone:a.telefone,
+      EmMaos:S.emprestimos.filter(e=>e.alunoId===a.id && !e.devolucao).length,
+      TotalEmprestimos:S.emprestimos.filter(e=>e.alunoId===a.id).length}));
+    case "quantidade": { const c={}; S.obras.forEach(o=>{const k=o.categoria||"Sem categoria"; c[k]=(c[k]||0)+o.exemplares.length;});
+      return Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([Categoria,Exemplares])=>({Categoria,Exemplares})); }
+  }
+  return [];
+}
+
+TELAS.relatorios = () => {
+  const tipo = ctx.tipo || "acervo";
+  const linhas = linhasRelatorio(tipo);
+  const cols = linhas.length ? Object.keys(linhas[0]) : [];
+  const nome = (RELS.find(r=>r[0]===tipo)||[,""])[1];
+  return `<div class="chips naoimprime">${RELS.map(([v,n])=>
+      `<button class="chip ${tipo===v?"on":""}" data-acao="rel" data-v="${v}">${n}</button>`).join("")}</div>
+    <div class="linhab naoimprime">
+      <button class="btn mini" data-acao="exportar" ${linhas.length?"":"disabled"}>Exportar para Excel</button>
+      <button class="btn mini sec" data-acao="imprimir" ${linhas.length?"":"disabled"}>Imprimir ou salvar em PDF</button>
+    </div>
+    <div class="cartao"><h2>${nome}</h2>
+      <div class="rot" style="margin-bottom:10px">${esc(S.cfg.escola)} · ${linhas.length} registro(s) · ${brDate(hoje())}</div>
+      ${linhas.length===0?`<div class="vazio">Nada para mostrar neste relatório.</div>`:`
+      <div style="overflow-x:auto"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>${linhas.slice(0,400).map(l=>`<tr>${cols.map(c=>`<td>${esc(l[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      ${linhas.length>400?`<p class="rot">Mostrando os 400 primeiros. Exporte para Excel para ver a lista inteira.</p>`:""}`}
+    </div>`;
+};
+
+/* ---------- ajustes ---------- */
+TELAS.ajustes = () => `
+  <div class="cartao"><h2>Identificação</h2>
+    <div class="campo"><label>Nome da biblioteca ou da escola</label><input data-cfg="escola" value="${esc(S.cfg.escola)}"></div>
+    <div class="campo"><label>Prazo de empréstimo, em dias</label><input type="number" min="1" data-cfg="prazo" value="${S.cfg.prazo}"></div>
+    <div class="campo"><label>Próximo número de registro</label><input type="number" min="1" data-cfg="proxReg" value="${S.cfg.proxReg}"></div>
+    <button class="btn mini" data-acao="salvarCfg">Salvar ajustes</button>
+  </div>
+
+  <div class="cartao"><h2>Identificação por foto da capa</h2>
+    <p class="rot" style="margin-top:0">O código de barras e a busca por título funcionam sem nenhuma configuração.
+    A leitura da capa por inteligência artificial precisa de uma chave da API da Anthropic, criada em console.anthropic.com.
+    Ela fica guardada só neste aparelho.</p>
+    <div class="campo"><label>Chave da API</label><input data-cfg="apiKey" value="${esc(S.cfg.apiKey)}" placeholder="sk-ant-..."></div>
+    <button class="btn mini" data-acao="salvarCfg">Salvar chave</button>
+  </div>
+
+  <div class="cartao"><h2>Logomarca</h2>
+    <p class="rot" style="margin-top:0">O aplicativo usa o brasão Máximus. Você pode trocar por outra imagem,
+    que passa a aparecer no topo, na tela inicial e nas etiquetas.</p>
+    <div style="text-align:center;margin-bottom:12px">${marcaImg("width:110px;height:110px;object-fit:contain")}</div>
+    <input type="file" accept="image/*" id="arqLogo" hidden>
+    <div class="linhab"><button class="btn mini" data-acao="escolherLogo">Enviar logomarca</button>
+      ${S.cfg.logo?`<button class="btn mini sec" data-acao="tirarLogo">Voltar ao brasão Máximus</button>`:""}</div>
+  </div>
+
+  <div class="cartao"><h2>Importar acervo já catalogado</h2>
+    <p class="rot" style="margin-top:0">Cada linha da planilha vira um título. A coluna Exemplares define quantos registros são gerados.</p>
+    <input type="file" accept=".xlsx,.xls,.csv" id="arqPlanilha" hidden>
+    <div class="linhab"><button class="btn mini" data-acao="escolherPlanilha">Escolher planilha</button>
+      <button class="btn mini sec" data-acao="modelo">Baixar modelo</button></div>
+  </div>
+
+  <div class="cartao"><h2>Backup</h2>
+    <p class="rot" style="margin-top:0">Os dados ficam neste aparelho. Baixe o backup de tempos em tempos e guarde o arquivo
+    em outro lugar, para não perder nada se trocar de celular.</p>
+    <input type="file" accept=".json" id="arqBackup" hidden>
+    <div class="linhab"><button class="btn mini" data-acao="backup">Baixar backup</button>
+      <button class="btn mini sec" data-acao="restaurar">Restaurar backup</button></div>
+  </div>
+
+  <div class="cartao"><h2>Situação</h2>
+    <div class="num"><span class="rot">Títulos</span><b>${S.obras.length}</b></div>
+    <div class="num"><span class="rot">Exemplares</span><b>${S.obras.reduce((s,o)=>s+o.exemplares.length,0)}</b></div>
+    <div class="num"><span class="rot">Próximo registro</span><b>${reg(S.cfg.proxReg)}</b></div>
+    <div class="num"><span class="rot">Leitura de código pela câmera</span><span class="dir">${("BarcodeDetector" in window)?"disponível":"não disponível neste navegador"}</span></div>
+  </div>`;
+
+/* ================================================================
+   Scanner ao vivo
+   ================================================================ */
+let stream = null, lendo = false, aoLer = null;
+async function abrirScanner(callback){
+  if(!("BarcodeDetector" in window)){
+    avisar("Este navegador não lê códigos pela câmera. Use o Chrome no Android ou digite o número.", "erro");
+    return;
+  }
+  aoLer = callback;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+  }catch(e){
+    avisar("Não consegui abrir a câmera. Verifique a permissão do navegador.", "erro");
+    return;
+  }
+  const v = $("#video");
+  v.srcObject = stream; await v.play();
+  $("#scanner").style.display = "flex";
+  lendo = true;
+  const det = new BarcodeDetector({formats:["ean_13","ean_8","code_39","code_128","qr_code","upc_a"]});
+  const laco = async () => {
+    if(!lendo) return;
+    try{
+      const r = await det.detect(v);
+      if(r.length){ const val = r[0].rawValue; fecharScanner(); if(aoLer) aoLer(val); return; }
+    }catch(e){}
+    requestAnimationFrame(laco);
+  };
+  requestAnimationFrame(laco);
+}
+function fecharScanner(){
+  lendo = false;
+  $("#scanner").style.display = "none";
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+}
+
+/* Depois de ler um código: procura no acervo, senão busca dados do livro */
+async function tratarCodigo(valor){
+  const o = obraDoRegistro(valor) || S.obras.find(x=>soDigitos(x.isbn) && soDigitos(x.isbn)===soDigitos(valor));
+  if(o){ ir("obra", {id:o.id}); avisar("Livro encontrado no acervo."); return; }
+  avisar("Não está no acervo. Buscando os dados...");
+  const d = await buscarBiblio({isbn:valor});
+  if(d){ ir("cadastro"); Object.assign(ctx.form, d); desenhar(); avisar("Dados encontrados. Confira antes de salvar."); }
+  else { ir("cadastro"); ctx.form.isbn = valor; desenhar(); avisar("Não achei este código nas bases. Preencha à mão.", "erro"); }
+}
+
+/* ================================================================
+   Ações
+   ================================================================ */
+const ACOES = {
+  aba: el => ir(el.dataset.t),
+  voltar: () => {
+    if(tela==="etiqueta") return ir(ctx.volta || "acervo", ctx.id ? {id:ctx.id} : {});
+    return ir(VOLTA[tela] || "inicio", tela==="obra" ? {id:ctx.id} : {});
+  },
+  ajustes: () => ir("ajustes"),
+  imprimir: () => window.print(),
+
+  /* cadastro */
+  fotoCapa: () => $("#arqCapa").click(),
+  scanISBN: () => abrirScanner(async val => {
+    ctx.form.isbn = val;
+    avisar("Código lido. Buscando os dados...");
+    const d = await buscarBiblio({isbn:val});
+    if(d) Object.assign(ctx.form, d, {isbn: d.isbn || val});
+    desenhar();
+    avisar(d ? "Dados encontrados em "+d.fonte+". Confira antes de salvar." : "Código lido, mas não achei nas bases. Preencha à mão.", d?"ok":"erro");
+  }),
+  buscarDados: async () => {
+    const txt = ($("#buscaLivro").value||"").trim();
+    const s = $("#statusBusca");
+    const temFoto = ctx.fotos.length > 0;
+    if(!txt && !temFoto){ avisar("Escaneie o código, tire uma foto da capa ou digite o título.", "erro"); return; }
+    s.innerHTML = `<div class="rot" style="padding-top:12px"><span class="giro"></span>Procurando...</div>`;
+    let achou = false;
+    if(txt){
+      const d = await buscarBiblio(soDigitos(txt).length>=10 ? {isbn:txt} : {texto:txt});
+      if(d){ Object.assign(ctx.form, d); achou = true; }
+    }
+    if(!achou && temFoto){
+      try{
+        const r = await identificarPorFoto(ctx.fotos.map(f=>base64(f.grande)), txt);
+        const f = ctx.form;
+        ["titulo","autor","editora","ano","isbn","edicao","paginas","sinopse"].forEach(k=>{ if(r[k]) f[k]=String(r[k]); });
+        if(CATEGORIAS.includes(r.categoria)) f.categoria = r.categoria;
+        if(r.isbn){ const d = await buscarBiblio({isbn:r.isbn}); if(d) Object.assign(f, d, {sinopse: f.sinopse||d.sinopse}); }
+        achou = !!f.titulo;
+      }catch(e){ desenhar(); avisar(e.message, "erro"); return; }
+    }
+    desenhar();
+    avisar(achou ? "Dados preenchidos. Confira antes de salvar." : "Não consegui identificar. Preencha à mão.", achou?"ok":"erro");
+  },
+  salvarLivro: async () => {
+    const f = ctx.form;
+    if(!f.titulo.trim()){ avisar("Informe ao menos o título.", "erro"); return; }
+    const exemplares = [];
+    for(let i=0;i<ctx.qtd;i++) exemplares.push({registro: reg(S.cfg.proxReg+i)});
+    const nova = Object.assign({}, f, {id:uid(), criadoEm:hoje(), exemplares,
+      capa: ctx.fotos[0] ? ctx.fotos[0].thumb : f.capa});
+    await guardar("obras", nova);
+    S.obras.push(nova);
+    const de = reg(S.cfg.proxReg), ate = reg(S.cfg.proxReg+ctx.qtd-1);
+    S.cfg.proxReg += ctx.qtd;
+    await salvarCfg();
+    ir("obra", {id:nova.id});
+    avisar(ctx.qtd>1 ? `Cadastrado. Registros ${de} a ${ate}.` : `Cadastrado. Registro ${de}.`);
+  },
+
+  /* acervo e ficha */
+  ordem: el => { ctx.ordem = el.dataset.v; desenhar(); },
+  cat: el => { ctx.cat = el.dataset.v; desenhar(); },
+  abrirObra: el => ir("obra", {id: el.dataset.id}),
+  scanBusca: () => abrirScanner(tratarCodigo),
+  editarObra: () => { ctx.editando = true; desenhar(); },
+  cancelarEdicao: () => { ctx.editando = false; desenhar(); },
+  salvarEdicao: async () => {
+    const o = obra(ctx.id);
+    document.querySelectorAll("[data-edit]").forEach(i => o[i.dataset.edit] = i.value);
+    await guardar("obras", o);
+    ctx.editando = false; desenhar(); avisar("Ficha atualizada.");
+  },
+  removerObra: async () => {
+    const o = obra(ctx.id);
+    if(S.emprestimos.some(e=>!e.devolucao && o.exemplares.some(x=>x.registro===e.registro))){
+      avisar("Há exemplares emprestados. Registre a devolução antes de remover.", "erro"); return; }
+    if(!confirm(`Remover "${o.titulo}" e seus ${o.exemplares.length} exemplar(es)?`)) return;
+    await apagar("obras", o.id);
+    S.obras = S.obras.filter(x=>x.id!==o.id);
+    ir("acervo"); avisar("Livro removido do acervo.");
+  },
+  maisExemplar: async () => {
+    const o = obra(ctx.id);
+    const r = reg(S.cfg.proxReg);
+    o.exemplares.push({registro:r});
+    S.cfg.proxReg++;
+    await guardar("obras", o); await salvarCfg();
+    desenhar(); avisar(`Exemplar ${r} acrescentado.`);
+  },
+  etiqueta: el => ir("etiqueta", {id:ctx.id, volta:"obra", registros:[el.dataset.r]}),
+  etiquetasTodas: () => ir("etiqueta", {id:ctx.id, volta:"obra", registros: obra(ctx.id).exemplares.map(x=>x.registro)}),
+  etiquetasAcervo: () => {
+    const regs = listaAcervo().flatMap(o => o.exemplares.map(x => x.registro));
+    if(!regs.length){ avisar("Nenhum livro na lista atual.", "erro"); return; }
+    ir("etiqueta", {volta:"acervo", registros: regs});
+  },
+  emprestarDaqui: el => ir("novoEmprestimo", {registro: el.dataset.r}),
+
+  /* empréstimos */
+  abaEmp: el => { ctx.aba = el.dataset.v; desenhar(); },
+  escolherLivro: el => { ctx.registro = el.dataset.r; ctx.qa=""; desenhar(); },
+  voltarLivro: () => { if(ctx.registro){ ctx.registro=null; desenhar(); } else ir("emprestimos"); },
+  scanEmprestimo: () => abrirScanner(val => {
+    const o = obraDoRegistro(val);
+    if(o){ const st = statusDe(val);
+      if(st!=="disponivel"){ avisar("Este exemplar está "+NOME_STATUS[st].toLowerCase()+".", "erro"); return; }
+      ctx.registro = val; desenhar(); avisar("Livro selecionado."); }
+    else avisar("Etiqueta não encontrada no acervo.", "erro");
+  }),
+  confirmarEmprestimo: async el => {
+    const novo = {id:uid(), registro:ctx.registro, alunoId:el.dataset.a, emprestimo:hoje(),
+      prevista: somarDias(hoje(), S.cfg.prazo), devolucao:null};
+    await guardar("emprestimos", novo);
+    S.emprestimos.push(novo);
+    ir("emprestimos");
+    avisar("Emprestado. Devolver até "+brDate(novo.prevista)+".");
+  },
+  devolver: async el => {
+    const e = S.emprestimos.find(x=>x.id===el.dataset.e);
+    e.devolucao = hoje();
+    await guardar("emprestimos", e);
+    desenhar(); avisar("Devolução registrada.");
+  },
+  renovar: async el => {
+    const e = S.emprestimos.find(x=>x.id===el.dataset.e);
+    e.prevista = somarDias(e.prevista, S.cfg.prazo);
+    await guardar("emprestimos", e);
+    desenhar(); avisar("Renovado até "+brDate(e.prevista)+".");
+  },
+
+  /* alunos */
+  novoAluno: () => { ctx.novo = {id:uid(), nome:"", turma:"", matricula:"", telefone:""}; desenhar(); },
+  cancelarAluno: () => { ctx.novo = null; desenhar(); },
+  salvarAluno: async () => {
+    if(!ctx.novo.nome.trim()){ avisar("Informe o nome do aluno.", "erro"); return; }
+    await guardar("alunos", ctx.novo);
+    S.alunos.push(ctx.novo);
+    ctx.novo = null; desenhar(); avisar("Aluno cadastrado.");
+  },
+  abrirAluno: el => ir("aluno", {id: el.dataset.id}),
+  editarAluno: () => { ctx.editando = true; desenhar(); },
+  cancelarEdicaoAluno: () => { ctx.editando = false; desenhar(); },
+  salvarEdicaoAluno: async () => {
+    const a = aluno(ctx.id);
+    document.querySelectorAll("[data-editaluno]").forEach(i => a[i.dataset.editaluno] = i.value);
+    await guardar("alunos", a);
+    ctx.editando = false; desenhar(); avisar("Ficha atualizada.");
+  },
+  removerAluno: async () => {
+    const a = aluno(ctx.id);
+    if(S.emprestimos.some(e=>e.alunoId===a.id && !e.devolucao)){
+      avisar("Este aluno tem livros em mãos. Registre a devolução antes.", "erro"); return; }
+    if(!confirm("Remover "+a.nome+" do cadastro?")) return;
+    await apagar("alunos", a.id);
+    S.alunos = S.alunos.filter(x=>x.id!==a.id);
+    ir("alunos"); avisar("Aluno removido.");
+  },
+
+  /* relatórios */
+  rel: el => { ctx.tipo = el.dataset.v; desenhar(); },
+  exportar: () => exportarPlanilha(linhasRelatorio(ctx.tipo||"acervo"), (RELS.find(r=>r[0]===(ctx.tipo||"acervo"))||[,"relatorio"])[1]),
+
+  /* ajustes */
+  salvarCfg: async () => {
+    document.querySelectorAll("[data-cfg]").forEach(i => {
+      const k = i.dataset.cfg;
+      S.cfg[k] = (k==="prazo"||k==="proxReg") ? Math.max(1, parseInt(i.value)||1) : i.value;
+    });
+    await salvarCfg(); desenhar(); avisar("Ajustes salvos.");
+  },
+  escolherLogo: () => $("#arqLogo").click(),
+  tirarLogo: async () => { S.cfg.logo = ""; await salvarCfg(); desenhar(); avisar("Voltamos ao brasão Máximus."); },
+  escolherPlanilha: () => $("#arqPlanilha").click(),
+  modelo: () => exportarPlanilha([{Titulo:"O Pequeno Príncipe", Autor:"Antoine de Saint-Exupéry", Editora:"Agir",
+    Ano:2015, ISBN:"9788522008731", Edicao:"2a", Categoria:"Infantojuvenil", Paginas:96, Exemplares:3,
+    Estante:"03", Prateleira:"02", Secao:"Literatura"}], "modelo-importacao"),
+  backup: () => {
+    const dados = {versao:1, geradoEm:new Date().toISOString(), cfg:S.cfg, obras:S.obras, alunos:S.alunos, emprestimos:S.emprestimos};
+    baixar(new Blob([JSON.stringify(dados)], {type:"application/json"}), "backup-biblioteca-"+hoje()+".json");
+    avisar("Backup baixado. Guarde o arquivo em outro lugar.");
+  },
+  restaurar: () => $("#arqBackup").click(),
+  fecharScanner: () => fecharScanner()
+};
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-acao]");
+  if(!el) return;
+  const f = ACOES[el.dataset.acao];
+  if(f){ e.preventDefault(); f(el); }
+});
+document.addEventListener("input", e => {
+  const t = e.target;
+  if(t.dataset.campo && ctx.form) ctx.form[t.dataset.campo] = t.value;
+  if(t.dataset.aluno && ctx.novo) ctx.novo[t.dataset.aluno] = t.value;
+});
+
+/* ---------- arquivos ---------- */
+function baixar(blob, nome){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+function exportarPlanilha(linhas, nome){
+  if(!linhas.length){ avisar("Nada para exportar.", "erro"); return; }
+  if(window.XLSX){
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), nome.slice(0,28));
+    XLSX.writeFile(wb, nome.replace(/\s+/g,"-").toLowerCase()+".xlsx");
+  }else{
+    const cols = Object.keys(linhas[0]);
+    const csv = [cols.join(";")].concat(linhas.map(l=>cols.map(c=>`"${String(l[c]==null?"":l[c]).replace(/"/g,'""')}"`).join(";"))).join("\n");
+    baixar(new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8"}), nome.replace(/\s+/g,"-").toLowerCase()+".csv");
+  }
+  avisar("Arquivo gerado.");
+}
+
+document.addEventListener("change", async e => {
+  const t = e.target;
+
+  if(t.id==="arqCapa" && t.files[0]){
+    const f = t.files[0];
+    try{
+      const grande = await reduzir(f, 1100, 0.82), thumb = await reduzir(f, 260, 0.6);
+      ctx.fotos = [{grande, thumb}];
+      if(!ctx.form.capa) ctx.form.capa = thumb;
+      const cod = await lerCodigo(f);
+      desenhar();
+      if(cod){
+        avisar("Código de barras encontrado na foto. Buscando...");
+        const d = await buscarBiblio({isbn:cod});
+        if(d){ Object.assign(ctx.form, d); desenhar(); avisar("Dados encontrados. Confira antes de salvar."); return; }
+      }
+      avisar("Foto adicionada. Toque em Buscar dados do livro.");
+    }catch(err){ avisar(err.message, "erro"); }
+    t.value = "";
+  }
+
+  if(t.id==="arqLogo" && t.files[0]){
+    try{
+      S.cfg.logo = await reduzir(t.files[0], 420, 0.9);
+      await salvarCfg(); desenhar(); avisar("Logomarca aplicada.");
+    }catch(err){ avisar("Não consegui ler a imagem.", "erro"); }
+    t.value = "";
+  }
+
+  if(t.id==="arqPlanilha" && t.files[0]){
+    try{
+      if(!window.XLSX) throw new Error("A leitura de planilhas precisa de internet na primeira vez.");
+      const buf = await t.files[0].arrayBuffer();
+      const wb = XLSX.read(buf);
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      let n = S.cfg.proxReg, criadas = 0;
+      for(const l of linhas){
+        const pega = (...ks) => { for(const k of ks){ const c = Object.keys(l).find(x=>semAcento(x)===semAcento(k));
+          if(c && l[c]!==undefined) return String(l[c]); } return ""; };
+        const titulo = pega("Titulo","Título","Nome","Livro");
+        if(!titulo) continue;
+        const qtd = Math.max(1, parseInt(pega("Exemplares","Quantidade","Qtd"))||1);
+        const ex = []; for(let i=0;i<qtd;i++) ex.push({registro: reg(n++)});
+        const nova = {id:uid(), titulo, autor:pega("Autor"), editora:pega("Editora"), ano:pega("Ano"), isbn:pega("ISBN"),
+          edicao:pega("Edicao","Edição"), categoria:pega("Categoria"), paginas:pega("Paginas","Páginas"),
+          sinopse:pega("Sinopse"), capa:"", capaUrl:"", estante:pega("Estante"), prateleira:pega("Prateleira"),
+          secao:pega("Secao","Seção"), criadoEm:hoje(), exemplares:ex};
+        await guardar("obras", nova); S.obras.push(nova); criadas++;
+      }
+      S.cfg.proxReg = n; await salvarCfg();
+      desenhar();
+      avisar(criadas ? criadas+" título(s) importado(s)." : "Nenhuma linha com título foi encontrada.", criadas?"ok":"erro");
+    }catch(err){ avisar(err.message || "Não consegui ler a planilha.", "erro"); }
+    t.value = "";
+  }
+
+  if(t.id==="arqBackup" && t.files[0]){
+    try{
+      const d = JSON.parse(await t.files[0].text());
+      if(!d.obras) throw new Error();
+      if(!confirm("Restaurar o backup substitui todos os dados atuais. Continuar?")){ t.value=""; return; }
+      await limpar("obras"); await limpar("alunos"); await limpar("emprestimos");
+      for(const o of d.obras) await guardar("obras", o);
+      for(const a of d.alunos||[]) await guardar("alunos", a);
+      for(const e of d.emprestimos||[]) await guardar("emprestimos", e);
+      if(d.cfg){ S.cfg = Object.assign(S.cfg, d.cfg, {chave:"config"}); await salvarCfg(); }
+      S.obras = d.obras; S.alunos = d.alunos||[]; S.emprestimos = d.emprestimos||[];
+      ir("inicio"); avisar("Backup restaurado.");
+    }catch(err){ avisar("Arquivo de backup inválido.", "erro"); }
+    t.value = "";
+  }
+});
+
+/* ---------- planilhas: carrega quando houver internet, fica em cache ---------- */
+(function(){
+  const s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+  s.async = true;
+  document.head.appendChild(s);
+})();
+
+/* ---------- aviso de devoluções ao abrir ---------- */
+function avisarDevolucoes(){
+  const abertos = S.emprestimos.filter(e=>!e.devolucao);
+  const at = abertos.filter(e=>diasAte(e.prevista)<0).length;
+  if(at && "Notification" in window && Notification.permission==="granted"){
+    new Notification("Biblioteca", {body: at+" livro(s) em atraso hoje."});
+  }
+}
+
+/* ---------- início ---------- */
+(async function(){
+  try{
+    await carregar();
+  }catch(e){
+    document.body.innerHTML = '<div class="wrap"><div class="aviso erro">Não consegui abrir o banco de dados. '+
+      'Se estiver em aba anônima, abra em uma aba normal.</div></div>';
+    return;
+  }
+  desenhar();
+  avisarDevolucoes();
+  if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
