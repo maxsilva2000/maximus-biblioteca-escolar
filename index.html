@@ -16,6 +16,19 @@
   --ouro:#C9A227; --ouro2:#E7CE84; --prata:#BFC4CC;
   --texto:#EDEAE3; --soft:#9A9891; --linha:#26292F; --forte:#3A3E45;
   --disp:#79BF9B; --empr:#87ADE0; --atra:#E0705F; --res:#D9B26A;
+  --ouroTopo:#E7CE84; --softTopo:#9A9891;
+}
+:root[data-tema="claro"]{
+  --fundo:#F2F0E9; --card:#FFFFFF; --card2:#F7F5EE; --topo:#0F1113;
+  --ouro:#9A7A1A; --ouro2:#7A5F12; --prata:#6B7280;
+  --texto:#1A1C18; --soft:#5E625B; --linha:#E2DECF; --forte:#C4BFAC;
+  --disp:#2E7D52; --empr:#2C4A7C; --atra:#A63328; --res:#8A6A16;
+}
+:root[data-tema="azul"]{
+  --fundo:#0A1220; --card:#111C2E; --card2:#182640; --topo:#060C16;
+  --ouro:#C9A227; --ouro2:#E7CE84; --prata:#BFC4CC;
+  --texto:#E9EEF7; --soft:#8FA0B8; --linha:#1E2E48; --forte:#2E4160;
+  --disp:#6FC49B; --empr:#7FB0EC; --atra:#E0705F; --res:#D9B26A;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -24,7 +37,7 @@ body{background:var(--fundo);color:var(--texto);min-height:100vh;
  padding-bottom:calc(84px + env(safe-area-inset-bottom));-webkit-font-smoothing:antialiased;font-size:15px}
 body.semnav{padding-bottom:24px}
 h1,h2,h3,.serif{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-weight:600;margin:0}
-h1{font-size:21px;letter-spacing:.01em;color:var(--ouro2)}
+h1{font-size:21px;letter-spacing:.01em;color:var(--ouroTopo)}
 h2{font-size:18px;margin-bottom:10px;color:var(--ouro2)}
 h3{font-size:16px;color:var(--texto)}
 p{line-height:1.55}
@@ -34,8 +47,8 @@ header{background:var(--topo);padding:calc(12px + env(safe-area-inset-top)) 14px
  border-bottom:1px solid rgba(201,162,39,.32)}
 .topo{display:flex;align-items:center;gap:11px;max-width:660px;margin:0 auto}
 .topo .txt{flex:1;min-width:0}
-.sub{font-size:11.5px;color:var(--soft);margin-top:2px;letter-spacing:.09em;text-transform:uppercase}
-.voltar{background:transparent;border:1px solid rgba(201,162,39,.5);color:var(--ouro2);border-radius:8px;
+.sub{font-size:11.5px;color:var(--softTopo);margin-top:2px;letter-spacing:.09em;text-transform:uppercase}
+.voltar{background:transparent;border:1px solid rgba(201,162,39,.5);color:var(--ouroTopo);border-radius:8px;
  padding:8px 12px;font:inherit;font-size:13.5px;cursor:pointer}
 
 .marca{background:linear-gradient(180deg,#0A0B0D,#131519);border:1px solid rgba(201,162,39,.4);border-radius:12px;
@@ -97,9 +110,9 @@ textarea{min-height:86px;resize:vertical}
 
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--topo);
  border-top:1px solid rgba(201,162,39,.3);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;background:none;border:0;padding:8px 1px 10px;font-size:10px;color:var(--soft);cursor:pointer}
+nav button{flex:1;background:none;border:0;padding:8px 1px 10px;font-size:10px;color:var(--softTopo);cursor:pointer}
 nav button .ico{font-size:19px;margin-bottom:2px}
-nav button.on{color:var(--ouro2);font-weight:700}
+nav button.on{color:var(--ouroTopo);font-weight:700}
 
 .busca{margin-bottom:4px}
 .chips{display:flex;gap:7px;overflow-x:auto;padding:8px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -441,6 +454,19 @@ function erroAuth(e){
   if(c.includes("network")) return "Sem conexão com a internet.";
   if(c.includes("operation-not-allowed")) return "Ative E-mail/senha no Firebase, em Authentication.";
   return m || "Não consegui completar a operação.";
+}
+
+/* ---------- tema ---------- */
+const TEMAS = [["escuro","Escuro"],["claro","Claro"],["azul","Azul"]];
+function temaAtual(){
+  try{ return localStorage.getItem("maximus:tema") || "escuro"; }catch(e){ return "escuro"; }
+}
+function aplicarTema(t){
+  document.documentElement.dataset.tema = t;
+  const cor = t==="claro" ? "#0F1113" : t==="azul" ? "#060C16" : "#0A0B0D";
+  const m = document.querySelector('meta[name="theme-color"]');
+  if(m) m.setAttribute("content", cor);
+  try{ localStorage.setItem("maximus:tema", t); }catch(e){}
 }
 
 /* ---------- avisos ---------- */
@@ -1225,6 +1251,12 @@ TELAS.ajustes = () => `
     </div>
   </div>
 
+  <div class="cartao"><h2>Aparência</h2>
+    <p class="rot" style="margin-top:0">Vale só para este aparelho.</p>
+    <div class="chips">${TEMAS.map(([v,n])=>
+      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
+  </div>
+
   <div class="cartao"><h2>Identificação</h2>
     <div class="campo"><label>Nome da biblioteca ou da escola</label><input data-cfg="escola" value="${esc(S.cfg.escola)}"></div>
     <div class="campo"><label>Prazo de empréstimo, em dias</label><input type="number" min="1" data-cfg="prazo" value="${S.cfg.prazo}"></div>
@@ -1581,6 +1613,7 @@ const ACOES = {
     await salvarCfg(); desenhar(); avisar("Ajustes salvos.");
   },
   tirarCapa: () => { ctx.form.capa = ""; ctx.form.capaUrl = ""; ctx.fotos = []; desenhar(); },
+  tema: el => { aplicarTema(el.dataset.v); desenhar(); },
   escolherLogo: () => $("#arqLogo").click(),
   tirarLogo: async () => { S.cfg.logo = ""; await salvarCfg(); desenhar(); avisar("Voltamos ao brasão Máximus."); },
   escolherPlanilha: () => $("#arqPlanilha").click(),
@@ -1761,6 +1794,7 @@ document.addEventListener("change", async e => {
    Início
    ================================================================ */
 (async function(){
+  aplicarTema(temaAtual());
   const c = window.FIREBASE_CONFIG;
   if(!c || !c.apiKey || String(c.apiKey).includes("COLE_")){ tela = "semconfig"; desenhar(); return; }
   tela = "entrar"; ctx = {modo:"entrar"}; desenhar();
