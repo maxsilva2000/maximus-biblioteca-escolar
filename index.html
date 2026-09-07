@@ -497,6 +497,24 @@ async function porOpenLibrary(isbn){
   };
 }
 
+/* Baixa a capa e guarda uma miniatura junto do livro, para ela não sumir
+   se o site de origem sair do ar. Se o download for barrado, fica só o link. */
+async function baixarCapa(url, isbn){
+  const tentativas = [url];
+  if(isbn) tentativas.push("https://covers.openlibrary.org/b/isbn/" + isbn + "-M.jpg?default=false");
+  for(const u of tentativas){
+    if(!u) continue;
+    try{
+      const r = await fetch(u, {mode:"cors"});
+      if(!r.ok) continue;
+      const b = await r.blob();
+      if(!b.type.startsWith("image") || b.size < 1200) continue;
+      return await reduzir(b, 320, 0.75);
+    }catch(e){}
+  }
+  return "";
+}
+
 async function buscarBiblio({isbn, texto}){
   const limpo = soDigitos(isbn);
   if(limpo.length >= 10){
@@ -507,12 +525,21 @@ async function buscarBiblio({isbn, texto}){
       () => porOpenLibrary(limpo)
     ];
     for(const f of fontes){
-      try{ const r = await f(); if(r && r.titulo) return r; }catch(e){}
+      try{
+        const r = await f();
+        if(r && r.titulo){
+          r.capa = await baixarCapa(r.capaUrl, limpo);
+          return r;
+        }
+      }catch(e){}
     }
     return null;
   }
   if(texto){
-    try{ return await porGoogleBooks(encodeURIComponent(texto), ""); }catch(e){}
+    try{
+      const r = await porGoogleBooks(encodeURIComponent(texto), "");
+      if(r && r.titulo){ r.capa = await baixarCapa(r.capaUrl, soDigitos(r.isbn)); return r; }
+    }catch(e){}
   }
   return null;
 }
@@ -754,8 +781,14 @@ TELAS.cadastro = () => {
     <div id="statusBusca"></div>
   </div>
   <div class="cartao"><h2>2. Confira e corrija</h2>
-    <div class="aviso">Se o livro não estiver em nenhuma base, preencha os campos aqui e salve do mesmo jeito.
-    O registro e a etiqueta são gerados igual.</div>
+    ${(f.capa || f.capaUrl) ? `<div style="text-align:center;margin-bottom:12px">
+      <img src="${f.capa || f.capaUrl}" alt="Capa do livro"
+        style="height:150px;border-radius:6px;border:1px solid var(--forte)">
+      <div class="linhab" style="justify-content:center;margin:8px 0 0">
+        <button class="chip" data-acao="tirarCapa">Remover capa</button>
+        <button class="chip" data-acao="fotoCapa">Fotografar a minha</button>
+      </div></div>` : `<div class="aviso">Se o livro não estiver em nenhuma base, preencha os campos aqui e salve
+      do mesmo jeito. O registro e a etiqueta são gerados igual.</div>`}
     ${campo("Título","titulo")}${campo("Autor","autor")}
     <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
     <div class="dupla">${campo("ISBN","isbn")}${campo("Edição","edicao")}</div>
@@ -1300,7 +1333,7 @@ const ACOES = {
     const d = await buscarBiblio({isbn:val});
     if(d) Object.assign(ctx.form, d, {isbn: d.isbn || val});
     desenhar();
-    avisar(d ? "Encontrado em "+d.fonte+". Confira antes de salvar."
+    avisar(d ? "Encontrado em "+d.fonte+(d.capa?", com a capa":"")+". Confira antes de salvar."
       : "Livro não está nas bases. O ISBN já foi preenchido: complete o título e o autor à mão e salve normalmente.", d?"ok":"erro");
   }),
   buscarDados: async () => {
@@ -1467,6 +1500,7 @@ const ACOES = {
     });
     await salvarCfg(); desenhar(); avisar("Ajustes salvos.");
   },
+  tirarCapa: () => { ctx.form.capa = ""; ctx.form.capaUrl = ""; ctx.fotos = []; desenhar(); },
   escolherLogo: () => $("#arqLogo").click(),
   tirarLogo: async () => { S.cfg.logo = ""; await salvarCfg(); desenhar(); avisar("Voltamos ao brasão Máximus."); },
   escolherPlanilha: () => $("#arqPlanilha").click(),
