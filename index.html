@@ -375,31 +375,105 @@ const MAPA_CAT = [[/juvenil|young adult/i,"Infantojuvenil"],[/juvenile|children|
 [/brazilian|brasileira/i,"Literatura brasileira"],[/fiction|ficção/i,"Ficção"],[/literary|literatura/i,"Literatura"]];
 const adivinharCategoria = t => (MAPA_CAT.find(([re])=>re.test(t||"")) || [,""])[1];
 
+/* Bases de livros consultadas em cascata.
+   A Câmara Brasileira do Livro vem primeiro porque cobre o catálogo nacional,
+   que é onde o Google Books costuma falhar. */
+
+async function porBrasilAPI(isbn){
+  const r = await fetch("https://brasilapi.com.br/api/isbn/v1/" + isbn);
+  if(!r.ok) return null;
+  const v = await r.json();
+  if(!v || !v.title) return null;
+  return {
+    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""),
+    autor: (v.authors || []).join(", "),
+    editora: v.publisher || "",
+    ano: v.year ? String(v.year) : "",
+    isbn: isbn,
+    paginas: v.page_count ? String(v.page_count) : "",
+    sinopse: (v.synopsis || "").slice(0, 600),
+    categoria: adivinharCategoria((v.subjects || []).join(" ") + " " + (v.synopsis || "")),
+    capaUrl: v.cover_url || "",
+    fonte: "Câmara Brasileira do Livro"
+  };
+}
+
+async function porMercadoEditorial(isbn){
+  const r = await fetch("https://api.mercadoeditorial.org/api/v1.2/book?isbn=" + isbn);
+  if(!r.ok) return null;
+  const j = await r.json();
+  const b = j && j.books && j.books[0];
+  if(!b || !b.titulo) return null;
+  const autores = (b.contribuicao || []).filter(c => !c.codigo_contribuicao || c.codigo_contribuicao === "1")
+    .map(c => [c.nome, c.sobrenome].filter(Boolean).join(" ")).join(", ");
+  const capa = b.imagens && b.imagens.imagem_primeira_capa ? b.imagens.imagem_primeira_capa.media : "";
+  return {
+    titulo: b.titulo + (b.subtitulo ? ": " + b.subtitulo : ""),
+    autor: autores,
+    editora: b.editora && b.editora.nome ? b.editora.nome : "",
+    ano: b.ano_edicao ? String(b.ano_edicao) : (b.data_publicacao || "").slice(0,4),
+    isbn: isbn,
+    edicao: b.numero_edicao ? String(b.numero_edicao) + "ª" : "",
+    paginas: b.paginas ? String(b.paginas) : "",
+    sinopse: (b.sinopse || "").slice(0, 600),
+    categoria: adivinharCategoria((b.sinopse || "") + " " + (b.palavras_chave || "")),
+    capaUrl: capa || "",
+    fonte: "Mercado Editorial"
+  };
+}
+
+async function porGoogleBooks(consulta, isbn){
+  const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q=" + consulta);
+  if(!r.ok) return null;
+  const j = await r.json();
+  const v = j.items && j.items[0] && j.items[0].volumeInfo;
+  if(!v || !v.title) return null;
+  return {
+    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""),
+    autor: (v.authors || []).join(", "),
+    editora: v.publisher || "",
+    ano: (v.publishedDate || "").slice(0, 4),
+    isbn: isbn || ((v.industryIdentifiers || []).find(i => i.type === "ISBN_13") || {}).identifier || "",
+    paginas: v.pageCount ? String(v.pageCount) : "",
+    sinopse: (v.description || "").slice(0, 600),
+    categoria: adivinharCategoria((v.categories || []).join(" ") + " " + (v.description || "")),
+    capaUrl: v.imageLinks ? (v.imageLinks.thumbnail || "").replace("http://", "https://") : "",
+    fonte: "Google Books"
+  };
+}
+
+async function porOpenLibrary(isbn){
+  const r = await fetch("https://openlibrary.org/api/books?format=json&jscmd=data&bibkeys=ISBN:" + isbn);
+  if(!r.ok) return null;
+  const j = await r.json();
+  const v = j["ISBN:" + isbn];
+  if(!v || !v.title) return null;
+  return {
+    titulo: v.title, autor: (v.authors || []).map(a => a.name).join(", "),
+    editora: (v.publishers || []).map(p => p.name).join(", "),
+    ano: (v.publish_date || "").slice(-4), isbn: isbn,
+    paginas: v.number_of_pages ? String(v.number_of_pages) : "", sinopse: "",
+    categoria: adivinharCategoria((v.subjects || []).map(s => s.name).join(" ")),
+    capaUrl: v.cover ? v.cover.medium : "", fonte: "Open Library"
+  };
+}
+
 async function buscarBiblio({isbn, texto}){
   const limpo = soDigitos(isbn);
-  const q = limpo ? "isbn:"+limpo : encodeURIComponent(texto||"");
-  if(!q) return null;
-  try{
-    const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q="+q);
-    const j = await r.json();
-    const v = j.items && j.items[0] && j.items[0].volumeInfo;
-    if(v) return {titulo: v.title + (v.subtitle ? ": "+v.subtitle : ""), autor:(v.authors||[]).join(", "),
-      editora: v.publisher||"", ano:(v.publishedDate||"").slice(0,4),
-      isbn: limpo || ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
-      paginas: v.pageCount?String(v.pageCount):"", sinopse:(v.description||"").slice(0,600),
-      categoria: adivinharCategoria((v.categories||[]).join(" ")+" "+(v.description||"")),
-      capaUrl: v.imageLinks ? (v.imageLinks.thumbnail||"").replace("http://","https://") : "", fonte:"Google Books"};
-  }catch(e){}
-  if(limpo){
-    try{
-      const r = await fetch("https://openlibrary.org/api/books?format=json&jscmd=data&bibkeys=ISBN:"+limpo);
-      const j = await r.json(); const v = j["ISBN:"+limpo];
-      if(v) return {titulo:v.title||"", autor:(v.authors||[]).map(a=>a.name).join(", "),
-        editora:(v.publishers||[]).map(p=>p.name).join(", "), ano:(v.publish_date||"").slice(-4), isbn:limpo,
-        paginas: v.number_of_pages?String(v.number_of_pages):"", sinopse:"",
-        categoria: adivinharCategoria((v.subjects||[]).map(s=>s.name).join(" ")),
-        capaUrl: v.cover?v.cover.medium:"", fonte:"Open Library"};
-    }catch(e){}
+  if(limpo.length >= 10){
+    const fontes = [
+      () => porBrasilAPI(limpo),
+      () => porMercadoEditorial(limpo),
+      () => porGoogleBooks("isbn:" + limpo, limpo),
+      () => porOpenLibrary(limpo)
+    ];
+    for(const f of fontes){
+      try{ const r = await f(); if(r && r.titulo) return r; }catch(e){}
+    }
+    return null;
+  }
+  if(texto){
+    try{ return await porGoogleBooks(encodeURIComponent(texto), ""); }catch(e){}
   }
   return null;
 }
@@ -623,6 +697,8 @@ TELAS.cadastro = () => {
     <div id="statusBusca"></div>
   </div>
   <div class="cartao"><h2>2. Confira e corrija</h2>
+    <div class="aviso">Se o livro não estiver em nenhuma base, preencha os campos aqui e salve do mesmo jeito.
+    O registro e a etiqueta são gerados igual.</div>
     ${campo("Título","titulo")}${campo("Autor","autor")}
     <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
     <div class="dupla">${campo("ISBN","isbn")}${campo("Edição","edicao")}</div>
@@ -797,6 +873,9 @@ TELAS.emprestimos = () => {
   const lista = aba==="abertos"?abertos : aba==="atrasados"?atras : aba==="vencendo"?venc : devs;
   return `
   <button class="btn" data-acao="aba" data-t="novoEmprestimo">Registrar empréstimo</button>
+  <div class="linhab" style="margin-top:10px">
+    <button class="btn sec" data-acao="scanBalcao">📇 Escanear livro para emprestar ou devolver</button>
+  </div>
   <div class="chips">${[["abertos","Em aberto ("+abertos.length+")"],["atrasados","Atrasados ("+atras.length+")"],
     ["vencendo","Vencendo ("+venc.length+")"],["devolvidos","Devolvidos ("+devs.length+")"]]
     .map(([v,n])=>`<button class="chip ${aba===v?"on":""}" data-acao="abaEmp" data-v="${v}">${n}</button>`).join("")}</div>
@@ -1079,7 +1158,7 @@ async function tratarCodigo(valor){
   const d = await buscarBiblio({isbn:valor});
   ir("cadastro");
   if(d){ Object.assign(ctx.form, d); desenhar(); avisar("Dados encontrados. Confira antes de salvar."); }
-  else { ctx.form.isbn = valor; desenhar(); avisar("Não achei este código nas bases. Preencha à mão.", "erro"); }
+  else { ctx.form.isbn = valor; desenhar(); avisar("Livro novo para as bases. Preencha título e autor à mão e salve.", "erro"); }
 }
 
 /* ================================================================
@@ -1134,7 +1213,8 @@ const ACOES = {
     const d = await buscarBiblio({isbn:val});
     if(d) Object.assign(ctx.form, d, {isbn: d.isbn || val});
     desenhar();
-    avisar(d ? "Dados encontrados em "+d.fonte+". Confira antes de salvar." : "Código lido, mas não achei nas bases. Preencha à mão.", d?"ok":"erro");
+    avisar(d ? "Encontrado em "+d.fonte+". Confira antes de salvar."
+      : "Livro não está nas bases. O ISBN já foi preenchido: complete o título e o autor à mão e salve normalmente.", d?"ok":"erro");
   }),
   buscarDados: async () => {
     const txt = ($("#buscaLivro").value||"").trim(), s = $("#statusBusca"), temFoto = ctx.fotos.length>0;
@@ -1156,7 +1236,8 @@ const ACOES = {
       }catch(e){ desenhar(); avisar(e.message, "erro"); return; }
     }
     desenhar();
-    avisar(achou ? "Dados preenchidos. Confira antes de salvar." : "Não consegui identificar. Preencha à mão.", achou?"ok":"erro");
+    avisar(achou ? "Dados preenchidos. Confira antes de salvar."
+      : "Não achei em nenhuma base. Preencha os campos à mão e salve normalmente.", achou?"ok":"erro");
   },
   salvarLivro: async () => {
     const f = ctx.form;
@@ -1216,6 +1297,21 @@ const ACOES = {
 
   /* empréstimos */
   abaEmp: el => { ctx.aba = el.dataset.v; desenhar(); },
+  scanBalcao: () => abrirScanner(async val => {
+    const o = obraDoRegistro(val);
+    if(!o){ avisar("Etiqueta não encontrada no acervo.", "erro"); return; }
+    const e = emprestimoAberto(val);
+    if(e){
+      const a = alunoPorId(e.alunoId);
+      if(confirm(`${o.titulo}\nCom ${a ? a.nome : "aluno removido"} desde ${brDate(e.emprestimo)}.\n\nRegistrar a devolução?`)){
+        await guardar("emprestimos", Object.assign({}, e, {devolucao: hoje()}));
+        avisar("Devolução registrada: " + o.titulo);
+      }
+      return;
+    }
+    ir("novoEmprestimo", {registro: val});
+    avisar(o.titulo + ". Agora escolha o aluno.");
+  }),
   escolherLivro: el => { ctx.registro = el.dataset.r; ctx.qa=""; desenhar(); },
   voltarLivro: () => { if(ctx.registro){ ctx.registro=null; desenhar(); } else ir("emprestimos"); },
   scanEmprestimo: () => abrirScanner(val => {
