@@ -255,8 +255,17 @@ async function iniciarFirebase(){
 const bid = () => USUARIO.bibliotecaId;
 const refDoc = (loja, id) => FB.F.doc(FB.db, "bibliotecas", bid(), loja, id);
 const refCol = (loja) => FB.F.collection(FB.db, "bibliotecas", bid(), loja);
-const guardar = (loja, obj) => FB.F.setDoc(refDoc(loja, obj.id), obj);
-const apagar = (loja, id) => FB.F.deleteDoc(refDoc(loja, id));
+function podeEscrever(){
+  if(!USUARIO || !USUARIO.aprovado){
+    avisar("Sua conta ainda não foi liberada, então nada pode ser gravado.", "erro");
+    return false;
+  }
+  return true;
+}
+const guardar = (loja, obj) => { if(!podeEscrever()) return Promise.reject(new Error("sem permissão"));
+  return FB.F.setDoc(refDoc(loja, obj.id), obj); };
+const apagar = (loja, id) => { if(!podeEscrever()) return Promise.reject(new Error("sem permissão"));
+  return FB.F.deleteDoc(refDoc(loja, id)); };
 async function todos(loja){ const s = await FB.F.getDocs(refCol(loja)); return s.docs.map(d=>d.data()); }
 async function limpar(loja){ const s = await FB.F.getDocs(refCol(loja)); await Promise.all(s.docs.map(d=>FB.F.deleteDoc(d.ref))); }
 
@@ -267,8 +276,24 @@ let tela = "inicio", ctx = {};
 const refCfg = () => FB.F.doc(FB.db, "bibliotecas", bid(), "config", "config");
 const salvarCfg = () => FB.F.setDoc(refCfg(), S.cfg);
 
+function ouvirPerfil(){
+  escutas.push(FB.F.onSnapshot(FB.F.doc(FB.db, "usuarios", USUARIO.uid), d => {
+    if(!d.exists()) return;
+    const p = d.data();
+    const eraAprovado = USUARIO.aprovado;
+    USUARIO = p;
+    if(!p.aprovado){
+      pararEscutas();
+      S.obras = []; S.alunos = []; S.emprestimos = [];
+      tela = "pendente"; desenhar();
+      avisar("Seu acesso foi suspenso pelo administrador.", "erro");
+    }else if(!eraAprovado){ location.reload(); }
+  }));
+}
+
 function ouvirDados(){
   pararEscutas();
+  ouvirPerfil();
   const on = FB.F.onSnapshot;
   escutas.push(on(refCol("obras"), s => { S.obras = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCol("alunos"), s => { S.alunos = s.docs.map(d=>d.data()); desenhar(); }));
@@ -288,26 +313,40 @@ async function carregarTudo(){
 
 const perfilDe = async u => { const d = await FB.F.getDoc(FB.F.doc(FB.db,"usuarios",u)); return d.exists()?d.data():null; };
 
-async function criarConta({nome, email, senha, escola, codigo}){
+async function listarEscolas(){
+  try{
+    const s = await FB.F.getDocs(FB.F.collection(FB.db, "escolas"));
+    return s.docs.map(d => d.data()).sort((a,b) => semAcento(a.nome) < semAcento(b.nome) ? -1 : 1);
+  }catch(e){ return []; }
+}
+
+async function criarConta({nome, email, senha, escolaId, escolaNome}){
   const cred = await FB.A.createUserWithEmailAndPassword(FB.auth, email.trim(), senha);
   const u = cred.user.uid;
   await FB.A.updateProfile(cred.user, {displayName: nome}).catch(()=>{});
   const dev = DEV_EMAILS.includes(email.trim().toLowerCase());
-  let bibliotecaId = u, papel = dev ? "dev" : "admin", aprovado = dev;
 
-  if(codigo && codigo.trim()){
-    const q = FB.F.query(FB.F.collection(FB.db,"bibliotecas"), FB.F.where("codigo","==",codigo.trim().toUpperCase()));
-    const s = await FB.F.getDocs(q);
-    if(s.empty) throw new Error("Código da biblioteca não encontrado. Confira com o administrador.");
-    bibliotecaId = s.docs[0].id;
+  let bibliotecaId, papel, nomeEscola;
+  if(escolaId && escolaId !== "__nova"){
+    const d = await FB.F.getDoc(FB.F.doc(FB.db, "escolas", escolaId));
+    if(!d.exists()) throw new Error("Escola não encontrada. Escolha outra ou cadastre a sua.");
+    bibliotecaId = d.data().bibliotecaId;
+    nomeEscola = d.data().nome;
     papel = dev ? "dev" : "auxiliar";
+  }else{
+    if(!escolaNome) throw new Error("Informe o nome da escola.");
+    bibliotecaId = u; nomeEscola = escolaNome; papel = dev ? "dev" : "admin";
   }
-  const perfil = {uid:u, nome, email: email.trim().toLowerCase(), papel, aprovado, bibliotecaId,
-    criadoEm:new Date().toISOString()};
-  await FB.F.setDoc(FB.F.doc(FB.db,"usuarios",u), perfil);
+
+  const perfil = {uid:u, nome, email: email.trim().toLowerCase(), papel, aprovado: dev,
+    bibliotecaId, escola: nomeEscola, criadoEm: new Date().toISOString()};
+  await FB.F.setDoc(FB.F.doc(FB.db, "usuarios", u), perfil);
+
   if(bibliotecaId === u){
-    await FB.F.setDoc(FB.F.doc(FB.db,"bibliotecas",u), {id:u, nome: escola||"Biblioteca escolar", dono:u,
-      codigo:u.slice(0,8).toUpperCase(), criadoEm:new Date().toISOString()});
+    await FB.F.setDoc(FB.F.doc(FB.db, "bibliotecas", u), {id:u, nome: nomeEscola, dono:u,
+      codigo: u.slice(0,8).toUpperCase(), criadoEm: new Date().toISOString()});
+    await FB.F.setDoc(FB.F.doc(FB.db, "escolas", u), {id:u, nome: nomeEscola, bibliotecaId:u,
+      dono:u, criadoEm: new Date().toISOString()});
   }
   return perfil;
 }
@@ -548,9 +587,9 @@ function svgBarras(valor, altura=36){
 const TITULOS = {inicio:()=>S.cfg.escola||"Máximus", cadastro:()=>"Cadastrar livro", acervo:()=>"Acervo",
   obra:()=>"Ficha do livro", emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos",
   aluno:()=>"Ficha do aluno", relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiquetas",
-  usuarios:()=>"Usuários", entrar:()=>"Máximus", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
+  usuarios:()=>"Usuários", escolas:()=>"Escolas", entrar:()=>"Máximus", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
 const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos",
-  etiqueta:"acervo", usuarios:"ajustes"};
+  etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes"};
 const ABAS = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
   ["emprestimos","📖","Empréstimos"],["alunos","🎓","Alunos"],["relatorios","📊","Relatórios"]];
 
@@ -566,6 +605,17 @@ function ir(t, dados){
 }
 
 const TELAS = {}, DEPOIS = {};
+
+DEPOIS.entrar = () => {
+  const sel = $("#fEscolaSel");
+  if(!sel) return;
+  sel.addEventListener("change", () => {
+    $("#campoNova").style.display = sel.value === "__nova" ? "block" : "none";
+  });
+  if(!ctx.escolas && FB){
+    listarEscolas().then(l => { ctx.escolas = l; if(tela==="entrar" && ctx.modo==="criar") desenhar(); });
+  }
+};
 
 function desenhar(){
   const logado = !!USUARIO;
@@ -609,11 +659,18 @@ TELAS.entrar = () => {
       <div class="campo"><label>Seu nome</label><input id="fNome" autocomplete="name"></div>
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
       <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres"></div>
-      <div class="campo"><label>Nome da escola ou biblioteca</label><input id="fEscola" placeholder="EMEB Prefeito Fausto de Sousa Faria"></div>
-      <div class="campo"><label>Código da biblioteca, se você foi convidado</label>
-        <input id="fCodigo" placeholder="deixe vazio para criar uma nova"></div>
+      <div class="campo"><label>Escola</label>
+        <select id="fEscolaSel">
+          <option value="">${ctx.escolas ? "Selecione a escola" : "Carregando escolas..."}</option>
+          ${(ctx.escolas||[]).map(e=>`<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join("")}
+          <option value="__nova">Minha escola não está na lista</option>
+        </select></div>
+      <div class="campo" id="campoNova" style="display:none">
+        <label>Nome da escola</label>
+        <input id="fEscola" placeholder="EMEB Prefeito Fausto de Sousa Faria"></div>
       <button class="btn" data-acao="registrar">Criar conta</button>
-      <p class="rot" style="margin-bottom:0">Contas novas passam por liberação antes do primeiro acesso.</p>
+      <p class="rot" style="margin-bottom:0">Se a escola já estiver na lista, você entra como auxiliar dela.
+      Toda conta nova passa por liberação antes do primeiro acesso.</p>
     ` : `
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
       <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="current-password"></div>
@@ -1050,6 +1107,7 @@ TELAS.ajustes = () => `
     <p class="rot">Passe esse código para outro funcionário criar a conta dele e trabalhar no mesmo acervo.</p>
     <div class="linhab">
       ${ehAdmin()?`<button class="btn mini sec" data-acao="aba" data-t="usuarios">Usuários</button>`:""}
+      ${ehDev()?`<button class="btn mini sec" data-acao="aba" data-t="escolas">Escolas</button>`:""}
       <button class="btn mini per" data-acao="sair">Sair da conta</button>
     </div>
   </div>
@@ -1098,6 +1156,28 @@ TELAS.ajustes = () => `
     <div class="num"><span class="rot">Próximo registro</span><b>${reg(S.cfg.proxReg)}</b></div>
     <div class="num"><span class="rot">Leitura de código pela câmera</span><span class="dir">${("BarcodeDetector" in window)?"disponível":"indisponível neste navegador"}</span></div>
   </div>`;
+
+TELAS.escolas = () => {
+  const lista = ctx.escolas || [];
+  return `<div class="linhab"><button class="btn mini sec" data-acao="recarregarEscolas">Atualizar lista</button></div>
+    <div class="cartao"><h2>Escolas cadastradas${lista.length?" ("+lista.length+")":""}</h2>
+      ${lista.length===0?`<div class="vazio">Nenhuma escola ainda.</div>`:lista.map(e=>`
+        <div class="num">
+          <div style="min-width:0">
+            <div class="serif" style="font-size:15px">${esc(e.nome)}</div>
+            <div class="reg">${esc((e.id||"").slice(0,8).toUpperCase())}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="chip" data-acao="renomearEscola" data-e="${esc(e.id)}">Renomear</button>
+            <button class="chip" data-acao="excluirEscola" data-e="${esc(e.id)}">Excluir</button>
+          </div></div>`).join("")}
+    </div>
+    <div class="cartao"><h2>Nova escola</h2>
+      <div class="campo"><label>Nome da escola</label><input id="novaEscola"></div>
+      <button class="btn mini" data-acao="criarEscola">Cadastrar escola</button>
+      <p class="rot">A escola cadastrada aqui aparece na lista de quem for criar conta.</p>
+    </div>`;
+};
 
 TELAS.usuarios = () => {
   const lista = ctx.usuarios || [];
@@ -1177,10 +1257,13 @@ const ACOES = {
   },
   registrar: async () => {
     const nome = $("#fNome").value.trim(), email = $("#fEmail").value.trim(), senha = $("#fSenha").value;
-    const escola = $("#fEscola").value.trim(), codigo = $("#fCodigo").value.trim();
+    const escolaId = $("#fEscolaSel").value;
+    const escolaNome = $("#fEscola") ? $("#fEscola").value.trim() : "";
     if(!nome || !email || !senha){ avisar("Preencha nome, e-mail e senha.", "erro"); return; }
+    if(!escolaId){ avisar("Escolha a escola na lista.", "erro"); return; }
+    if(escolaId === "__nova" && !escolaNome){ avisar("Informe o nome da escola.", "erro"); return; }
     $("#statusAuth").innerHTML = `<div class="rot" style="padding-top:10px"><span class="giro"></span>Criando a conta...</div>`;
-    try{ await criarConta({nome, email, senha, escola, codigo}); }
+    try{ await criarConta({nome, email, senha, escolaId, escolaNome}); }
     catch(err){ $("#statusAuth").innerHTML = ""; avisar(erroAuth(err), "erro"); }
   },
   recuperar: async () => {
@@ -1197,7 +1280,11 @@ const ACOES = {
   sair: async () => { pararEscutas(); await FB.A.signOut(FB.auth); },
 
   /* navegação */
-  aba: el => ir(el.dataset.t),
+  aba: el => {
+    const t = el.dataset.t;
+    ir(t);
+    if(t==="escolas") listarEscolas().then(l => { ctx.escolas = l; if(tela==="escolas") desenhar(); });
+  },
   ajustes: () => ir("ajustes"),
   imprimir: () => window.print(),
   voltar: () => {
@@ -1395,6 +1482,36 @@ const ACOES = {
 
   /* usuários */
   recarregarUsuarios: () => carregarUsuarios(),
+  recarregarEscolas: async () => { ctx.escolas = await listarEscolas(); desenhar(); },
+  criarEscola: async () => {
+    const nome = ($("#novaEscola").value||"").trim();
+    if(!nome){ avisar("Informe o nome da escola.", "erro"); return; }
+    const id = uid();
+    try{
+      await FB.F.setDoc(FB.F.doc(FB.db,"bibliotecas",id), {id, nome, dono:USUARIO.uid,
+        codigo:id.slice(0,8).toUpperCase(), criadoEm:new Date().toISOString()});
+      await FB.F.setDoc(FB.F.doc(FB.db,"escolas",id), {id, nome, bibliotecaId:id,
+        dono:USUARIO.uid, criadoEm:new Date().toISOString()});
+      ctx.escolas = await listarEscolas(); desenhar(); avisar("Escola cadastrada.");
+    }catch(e){ avisar("Não consegui cadastrar a escola.", "erro"); }
+  },
+  renomearEscola: async el => {
+    const e = (ctx.escolas||[]).find(x=>x.id===el.dataset.e);
+    const nome = prompt("Novo nome da escola:", e ? e.nome : "");
+    if(!nome) return;
+    try{
+      await FB.F.updateDoc(FB.F.doc(FB.db,"escolas",el.dataset.e), {nome});
+      await FB.F.updateDoc(FB.F.doc(FB.db,"bibliotecas",e.bibliotecaId||el.dataset.e), {nome}).catch(()=>{});
+      ctx.escolas = await listarEscolas(); desenhar(); avisar("Escola renomeada.");
+    }catch(err){ avisar("Não consegui renomear.", "erro"); }
+  },
+  excluirEscola: async el => {
+    if(!confirm("Excluir esta escola da lista? O acervo dela não é apagado.")) return;
+    try{
+      await FB.F.deleteDoc(FB.F.doc(FB.db,"escolas",el.dataset.e));
+      ctx.escolas = await listarEscolas(); desenhar(); avisar("Escola removida da lista.");
+    }catch(e){ avisar("Não consegui excluir.", "erro"); }
+  },
   aprovar: el => mudarUsuario(el.dataset.u, {aprovado:true}),
   promover: el => mudarUsuario(el.dataset.u, {papel:"admin"}),
   bloquear: el => { if(confirm("Bloquear o acesso desta pessoa?")) mudarUsuario(el.dataset.u, {aprovado:false}); },
