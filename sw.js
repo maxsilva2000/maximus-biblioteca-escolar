@@ -1,6 +1,6 @@
 /* Service worker da Biblioteca: guarda o aplicativo para funcionar sem internet. */
 const CACHE = "biblioteca-v1";
-const ARQUIVOS = ["./", "./index.html", "./manifest.webmanifest", "./icone-192.png", "./icone-512.png", "./marca.png"];
+const ARQUIVOS = ["./", "./index.html", "./manifest.webmanifest", "./icone-192.png", "./icone-512.png", "./marca.png", "./config.js"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting()));
@@ -16,7 +16,7 @@ self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
 
   /* Buscas bibliográficas e IA sempre vão para a rede. */
-  if (/googleapis\.com|openlibrary\.org|api\.anthropic\.com/.test(url.host)) return;
+  if (/googleapis\.com|openlibrary\.org|api\.anthropic\.com|gstatic\.com|firebaseio|firestore/.test(url.host)) return;
 
   /* A biblioteca de planilhas fica em cache depois do primeiro uso. */
   if (/cdn\.jsdelivr\.net/.test(url.host)) {
