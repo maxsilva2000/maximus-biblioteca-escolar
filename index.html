@@ -313,11 +313,83 @@ async function carregarTudo(){
 
 const perfilDe = async u => { const d = await FB.F.getDoc(FB.F.doc(FB.db,"usuarios",u)); return d.exists()?d.data():null; };
 
+/* Escolas da rede estadual em Rondonópolis, já disponíveis na tela de criar conta.
+   A primeira pessoa que escolher uma delas cria a biblioteca daquela escola;
+   as seguintes entram na mesma biblioteca, como auxiliares. */
+const ESCOLAS_PADRAO = [
+"EE 7 de Setembro",
+"EE Adolfo Augusto de Moraes",
+"EE Arlinda Pessoa Morbeck",
+"EE Celestino Corrêa da Costa",
+"EE Cívico-Militar Antônio José de Lima",
+"EE Cívico-Militar Bonifácio Sachetti",
+"EE Cívico-Militar Carlos Irigaray Filho",
+"EE Cívico-Militar Dez de Dezembro",
+"EE Cívico-Militar Dom Aquino Corrêa",
+"EE Cívico-Militar Dr. Ytrio Corrêa",
+"EE Cívico-Militar Francisca Barros de Carvalho",
+"EE Cívico-Militar Irmã Miguelina Corso",
+"EE Cívico-Militar Joaquim Nunes Rocha",
+"EE Cívico-Militar José Moraes",
+"EE Cívico-Militar Ludovico Vieira Camargo",
+"EE Cívico-Militar Marechal Dutra",
+"EE Cívico-Militar Milton da Costa Ferreira",
+"EE Cívico-Militar Profª Amélia de Oliveira Silva",
+"EE Cívico-Militar Profª Edith Pereira Barbosa",
+"EE Cívico-Militar Profª Elizabeth de Freitas Magalhães",
+"EE Cívico-Militar Profª Eunice Souza dos Santos",
+"EE Cívico-Militar Profª Maria Elza Ferreira Inácio",
+"EE Cívico-Militar Profº Domingos Aparecido dos Santos",
+"EE Cívico-Militar Ramiro Bernardo da Silva",
+"EE Cívico-Militar São Pedro Apóstolo",
+"EE Cívico-Militar de Tempo Integral Antônio Ferreira Sobrinho",
+"EE Cívico-Militar de Tempo Integral Carlos Hugueney",
+"EE Cívico-Militar de Tempo Integral José Salmen Hanze",
+"EE Cívico-Militar de Tempo Integral João Matheus Barbosa",
+"EE Cívico-Militar de Tempo Integral Lucas Pacheco de Camargo",
+"EE Cívico-Militar de Tempo Integral Profª Stela Maris Valeriano da Silva",
+"EE Cívico-Militar de Tempo Integral Silvestre Gomes Jardim",
+"EE Cívico-Militar de Tempo Integral Treze de Maio",
+"EE Cívico-Militar de Tempo Integral Vinícius de Moraes",
+"EE Daniel Martins Moura",
+"EE Dep. Oscar Soares",
+"EE Dom Vunibaldo",
+"EE Dona Maria de Lourdes Ribeiro Fragelli",
+"EE Emanuel Pinheiro",
+"EE José Rodrigues dos Santos",
+"EE La Salle",
+"EE Major Otávio Pitaluga",
+"EE Maria Auxiliadora",
+"EE Maria de Lima Cadide",
+"EE Militar Dom Pedro II André Antônio Maggi",
+"EE Militar Tiradentes Maj. PM Ernestino Veríssimo da Silva",
+"EE Militar Tiradentes Modelo Santo Antônio",
+"EE Onecidio Manoel de Resende",
+"EE Pedro Ferreira",
+"EE Pindorama",
+"EE Pref. Artur Ramos",
+"EE Rui Barbosa",
+"EE Sagrado Coração de Jesus",
+"EE Santa Elvira",
+"EE Santa Teresinha",
+"EE Santo Antônio",
+"EE São Francisco",
+"EE São José Operário",
+"EE XV de Outubro"
+];
+
+function slugEscola(nome){
+  return "esc-" + semAcento(nome).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+}
+
 async function listarEscolas(){
+  const mapa = new Map();
+  ESCOLAS_PADRAO.forEach(nome => mapa.set(slugEscola(nome), {id: slugEscola(nome), nome, padrao: true}));
   try{
     const s = await FB.F.getDocs(FB.F.collection(FB.db, "escolas"));
-    return s.docs.map(d => d.data()).sort((a,b) => semAcento(a.nome) < semAcento(b.nome) ? -1 : 1);
-  }catch(e){ return []; }
+    s.docs.forEach(d => { const e = d.data(); mapa.set(e.id, e); });
+  }catch(e){}
+  return [...mapa.values()].sort((a,b) => semAcento(a.nome) < semAcento(b.nome) ? -1 : 1);
 }
 
 async function criarConta({nome, email, senha, escolaId, escolaNome}){
@@ -326,27 +398,35 @@ async function criarConta({nome, email, senha, escolaId, escolaNome}){
   await FB.A.updateProfile(cred.user, {displayName: nome}).catch(()=>{});
   const dev = DEV_EMAILS.includes(email.trim().toLowerCase());
 
-  let bibliotecaId, papel, nomeEscola;
+  let bibliotecaId, papel, nomeEscola, criarBiblioteca = false;
   if(escolaId && escolaId !== "__nova"){
     const d = await FB.F.getDoc(FB.F.doc(FB.db, "escolas", escolaId));
-    if(!d.exists()) throw new Error("Escola não encontrada. Escolha outra ou cadastre a sua.");
-    bibliotecaId = d.data().bibliotecaId;
-    nomeEscola = d.data().nome;
-    papel = dev ? "dev" : "auxiliar";
+    if(d.exists()){
+      // a biblioteca dessa escola já existe: entra como auxiliar dela
+      bibliotecaId = d.data().bibliotecaId;
+      nomeEscola = d.data().nome;
+      papel = dev ? "dev" : "auxiliar";
+    }else{
+      // escola da lista ainda sem biblioteca: esta pessoa abre a biblioteca dela
+      const daLista = ESCOLAS_PADRAO.find(n => slugEscola(n) === escolaId);
+      if(!daLista) throw new Error("Escola não encontrada. Escolha outra ou cadastre a sua.");
+      bibliotecaId = escolaId; nomeEscola = daLista;
+      papel = dev ? "dev" : "admin"; criarBiblioteca = true;
+    }
   }else{
     if(!escolaNome) throw new Error("Informe o nome da escola.");
-    bibliotecaId = u; nomeEscola = escolaNome; papel = dev ? "dev" : "admin";
+    bibliotecaId = u; nomeEscola = escolaNome; papel = dev ? "dev" : "admin"; criarBiblioteca = true;
   }
 
   const perfil = {uid:u, nome, email: email.trim().toLowerCase(), papel, aprovado: dev,
     bibliotecaId, escola: nomeEscola, criadoEm: new Date().toISOString()};
   await FB.F.setDoc(FB.F.doc(FB.db, "usuarios", u), perfil);
 
-  if(bibliotecaId === u){
-    await FB.F.setDoc(FB.F.doc(FB.db, "bibliotecas", u), {id:u, nome: nomeEscola, dono:u,
-      codigo: u.slice(0,8).toUpperCase(), criadoEm: new Date().toISOString()});
-    await FB.F.setDoc(FB.F.doc(FB.db, "escolas", u), {id:u, nome: nomeEscola, bibliotecaId:u,
-      dono:u, criadoEm: new Date().toISOString()});
+  if(criarBiblioteca){
+    await FB.F.setDoc(FB.F.doc(FB.db, "bibliotecas", bibliotecaId), {id: bibliotecaId, nome: nomeEscola,
+      dono: u, codigo: bibliotecaId.slice(0,8).toUpperCase(), criadoEm: new Date().toISOString()});
+    await FB.F.setDoc(FB.F.doc(FB.db, "escolas", bibliotecaId), {id: bibliotecaId, nome: nomeEscola,
+      bibliotecaId, dono: u, criadoEm: new Date().toISOString()});
   }
   return perfil;
 }
@@ -1198,12 +1278,12 @@ TELAS.escolas = () => {
         <div class="num">
           <div style="min-width:0">
             <div class="serif" style="font-size:15px">${esc(e.nome)}</div>
-            <div class="reg">${esc((e.id||"").slice(0,8).toUpperCase())}</div>
+            <div class="reg">${e.padrao ? "da lista, sem biblioteca aberta ainda" : "biblioteca ativa"}</div>
           </div>
-          <div style="display:flex;gap:6px">
+          ${e.padrao ? "" : `<div style="display:flex;gap:6px">
             <button class="chip" data-acao="renomearEscola" data-e="${esc(e.id)}">Renomear</button>
             <button class="chip" data-acao="excluirEscola" data-e="${esc(e.id)}">Excluir</button>
-          </div></div>`).join("")}
+          </div>`}</div>`).join("")}
     </div>
     <div class="cartao"><h2>Nova escola</h2>
       <div class="campo"><label>Nome da escola</label><input id="novaEscola"></div>
