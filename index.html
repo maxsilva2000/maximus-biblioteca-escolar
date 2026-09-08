@@ -827,7 +827,7 @@ function svgBarras(valor, altura=36){
 const TITULOS = {inicio:()=>S.cfg.escola||"Máximus", cadastro:()=>"Cadastrar livro", acervo:()=>"Acervo",
   obra:()=>"Ficha do livro", emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos",
   aluno:()=>"Ficha do aluno", relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiquetas",
-  usuarios:()=>"Usuários", escolas:()=>"Escolas", entrar:()=>"Máximus", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
+  usuarios:()=>"Usuários", escolas:()=>"Escolas", abrindo:()=>"Máximus", entrar:()=>"Máximus", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
 const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos",
   etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes"};
 const ABAS = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
@@ -861,7 +861,7 @@ function desenhar(){
   const logado = !!USUARIO;
   document.body.classList.toggle("semnav", !logado);
   $("#titulo").textContent = (TITULOS[tela]||(()=>"Máximus"))();
-  $("#subtitulo").textContent = tela==="inicio" || !logado ? "Máximus · Biblioteca Escolar" : "";
+  $("#subtitulo").textContent = (tela==="inicio" || !logado) ? "Máximus · Biblioteca Escolar" : "";
   $("#marcaTopo").innerHTML = marcaImg("width:36px;height:36px;object-fit:contain");
 
   const b = $("#acaoTopo");
@@ -881,6 +881,9 @@ function desenhar(){
 const blocoMarca = () => `<div class="marca">
   ${marcaImg("width:120px;height:120px;object-fit:contain;display:block;margin:0 auto")}
   <div class="nome">MÁXIMUS</div><div class="fio"></div><div class="desc">Biblioteca Escolar</div></div>`;
+
+TELAS.abrindo = () => `${blocoMarca()}
+  <div class="cartao"><div class="vazio"><span class="giro"></span>Abrindo a biblioteca...</div></div>`;
 
 TELAS.semconfig = () => `${blocoMarca()}
   <div class="cartao"><h2>Falta configurar o Firebase</h2>
@@ -1942,12 +1945,13 @@ document.addEventListener("change", async e => {
   aplicarTema(temaAtual());
   const c = window.FIREBASE_CONFIG;
   if(!c || !c.apiKey || String(c.apiKey).includes("COLE_")){ tela = "semconfig"; desenhar(); return; }
-  tela = "entrar"; ctx = {modo:"entrar"}; desenhar();
+  tela = "abrindo"; ctx = {}; desenhar();
   try{ await iniciarFirebase(); }
   catch(e){ avisar("Não consegui iniciar o Firebase. Confira o config.js.", "erro"); return; }
 
   FB.A.onAuthStateChanged(FB.auth, async user => {
     if(!user){ USUARIO = null; pararEscutas(); tela = "entrar"; ctx = {modo:"entrar"}; desenhar(); return; }
+    if(tela === "abrindo") desenhar();
     let perfil = null;
     for(let i=0;i<6 && !perfil;i++){
       perfil = await perfilDe(user.uid);
@@ -1957,7 +1961,7 @@ document.addEventListener("change", async e => {
     if(!perfil.aprovado){ USUARIO = perfil; tela = "pendente"; desenhar(); USUARIO = perfil; return; }
     USUARIO = perfil;
     try{ await carregarTudo(); }catch(e){ avisar("Não consegui carregar os dados. Verifique a internet.", "erro"); }
-    if(tela==="entrar" || tela==="pendente") tela = "inicio";
+    if(tela==="entrar" || tela==="pendente" || tela==="abrindo") tela = "inicio";
     desenhar();
     if(ehAdmin()) carregarUsuarios();
   });
