@@ -150,6 +150,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 #scanner video{flex:1;width:100%;object-fit:cover}
 #scanner .barra{padding:14px;display:flex;gap:10px;background:#08090A}
 #scanner .mira{position:absolute;top:50%;left:8%;right:8%;height:140px;margin-top:-70px;border:2px solid var(--ouro);border-radius:10px}
+#scanner .mira.capa{top:12%;bottom:22%;height:auto;left:14%;right:14%;margin-top:0}
+#scanner .mira.pronto{border-color:#79BF9B;box-shadow:0 0 0 4000px rgba(0,0,0,.35)}
+#scanDica{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#F2EEE2;font-size:15px;
+ text-shadow:0 2px 8px #000;padding:0 20px}
 
 #toast{position:fixed;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:50;display:none}
 #toast .aviso{margin:0;box-shadow:0 8px 26px rgba(0,0,0,.55)}
@@ -188,8 +192,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <nav id="nav"></nav>
 
 <div id="scanner">
-  <div style="position:relative;flex:1;display:flex"><video id="video" playsinline muted></video><div class="mira"></div></div>
-  <div class="barra"><button class="btn sec" data-acao="fecharScanner">Fechar</button></div>
+  <div style="position:relative;flex:1;display:flex">
+    <video id="video" playsinline muted></video>
+    <div class="mira" id="mira"></div>
+    <div id="scanDica">Enquadre a capa do livro</div>
+  </div>
+  <div class="barra">
+    <button class="btn sec" data-acao="fecharScanner">Fechar</button>
+    <button class="btn" id="btnManual" data-acao="capturarAgora" style="display:none">Tirar agora</button>
+  </div>
 </div>
 
 <div id="toast"><div class="aviso" id="toastTxt"></div></div>
@@ -1109,7 +1120,7 @@ TELAS.inicio = () => {
     ${venc.length?`<div><b>${venc.length}</b> ${venc.length===1?"devolução":"devoluções"} nos próximos dias.</div>`:""}
     <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="emprestimos">Ver devoluções</button></div>`:""}
   <div class="grade">
-    <button class="tile" data-acao="aba" data-t="cadastro"><span class="ico">📷</span><span>Cadastrar por foto</span></button>
+    <button class="tile" data-acao="capturaAuto"><span class="ico">⚡</span><span>Modo rápido</span></button>
     <button class="tile" data-acao="aba" data-t="acervo"><span class="ico">🔎</span><span>Pesquisar livro</span></button>
     <button class="tile" data-acao="scanBusca"><span class="ico">📇</span><span>Escanear etiqueta</span></button>
     <button class="tile" data-acao="aba" data-t="emprestimos"><span class="ico">📖</span><span>Empréstimos</span></button>
@@ -1222,9 +1233,12 @@ TELAS.cadastro = () => {
   return `
   <div class="cartao"><h2>1. Identifique o livro</h2>
     <p class="rot" style="margin-top:0">O caminho mais certeiro é o código de barras da contracapa.</p>
+    <button class="btn" data-acao="capturaAuto" style="margin-bottom:10px">⚡ Modo rápido: apontar e catalogar</button>
+    <p class="rot" style="margin:0 0 10px">A câmera fotografa sozinha quando a capa estiver enquadrada e parada.
+    Se houver código de barras à vista, ele usa o código.</p>
     <div class="linhab">
-      <button class="btn mini" data-acao="scanISBN">📷 Escanear código</button>
-      <button class="btn mini sec" data-acao="fotoCapa">🖼️ Foto da capa</button>
+      <button class="btn mini sec" data-acao="scanISBN">📷 Só o código</button>
+      <button class="btn mini sec" data-acao="fotoCapa">🖼️ Escolher imagem</button>
     </div>
     <input type="file" accept="image/*" capture="environment" id="arqCapa" hidden>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${
@@ -1272,6 +1286,7 @@ TELAS.cadastro = () => {
     <div class="campo"><label>Quantidade de exemplares</label><input type="number" min="1" max="99" id="qtd" value="${ctx.qtd}"></div>
     <p class="rot" id="aviReg">Vai receber ${ctx.qtd>1 ? "os registros "+reg(prox)+" a "+reg(prox+ctx.qtd-1) : "o registro "+reg(prox)}.</p>
     <button class="btn" data-acao="salvarLivro">Salvar no acervo</button>
+    <button class="btn sec" style="margin-top:8px" data-acao="salvarEProximo">Salvar e catalogar o próximo</button>
   </div>`;
 };
 DEPOIS.cadastro = () => {
@@ -1769,8 +1784,97 @@ async function abrirScanner(cb){
   };
   requestAnimationFrame(laco);
 }
+/* Câmera com disparo automático: assim que a imagem fica parada e nítida,
+   ele fotografa sozinho. Se aparecer código de barras antes, usa o código. */
+async function abrirCaptura(aoFoto, aoCodigo){
+  try{ stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",
+    width:{ideal:1920}, height:{ideal:1080}}}); }
+  catch(e){ avisar("Não consegui abrir a câmera. Verifique a permissão do navegador.", "erro"); return; }
+
+  const v = $("#video");
+  v.srcObject = stream; await v.play();
+  $("#scanner").style.display = "flex";
+  $("#mira").className = "mira capa";
+  $("#btnManual").style.display = "inline-flex";
+  lendo = true;
+
+  const dica = $("#scanDica");
+  const det = ("BarcodeDetector" in window)
+    ? new BarcodeDetector({formats:["ean_13","ean_8","code_39","code_128","upc_a"]}) : null;
+
+  const p = document.createElement("canvas");
+  p.width = 160; p.height = 120;
+  const pc = p.getContext("2d", {willReadFrequently:true});
+  let anterior = null, parados = 0, quadro = 0;
+
+  capturarAgora = () => { const foto = tirarFoto(v); fecharScanner(); aoFoto(foto); };
+
+  const passo = async () => {
+    if(!lendo) return;
+    quadro++;
+
+    if(det && quadro % 3 === 0){
+      try{
+        const r = await det.detect(v);
+        if(r.length){ const val = r[0].rawValue; fecharScanner(); aoCodigo(val); return; }
+      }catch(e){}
+    }
+
+    pc.drawImage(v, 0, 0, 160, 120);
+    const d = pc.getImageData(0, 0, 160, 120).data;
+    const g = new Uint8Array(160*120);
+    for(let i=0, j=0; i<d.length; i+=4, j++) g[j] = (d[i]*3 + d[i+1]*6 + d[i+2]) / 10;
+
+    let nitidez = 0;
+    for(let y=1; y<119; y++) for(let x=1; x<159; x++){
+      const i = y*160 + x;
+      nitidez += Math.abs(g[i]-g[i+1]) + Math.abs(g[i]-g[i+160]);
+    }
+    nitidez /= (158*118);
+
+    let mov = 999;
+    if(anterior){
+      let s = 0;
+      for(let i=0; i<g.length; i++) s += Math.abs(g[i]-anterior[i]);
+      mov = s / g.length;
+    }
+    anterior = g;
+
+    if(nitidez < 5){ parados = 0; dica.textContent = "Aproxime e enquadre a capa"; }
+    else if(mov > 3.2){ parados = 0; dica.textContent = "Segure firme..."; }
+    else{
+      parados++;
+      dica.textContent = parados >= 3 ? "Pronto!" : "Quase lá, não mexa...";
+    }
+    $("#mira").className = "mira capa" + (parados >= 3 ? " pronto" : "");
+
+    if(parados >= 4){
+      const foto = tirarFoto(v);
+      fecharScanner();
+      aoFoto(foto);
+      return;
+    }
+    setTimeout(() => requestAnimationFrame(passo), 130);
+  };
+  requestAnimationFrame(passo);
+}
+
+let capturarAgora = () => {};
+
+function tirarFoto(v){
+  const c = document.createElement("canvas");
+  const esc = Math.min(1, 1400 / v.videoWidth);
+  c.width = Math.round(v.videoWidth * esc);
+  c.height = Math.round(v.videoHeight * esc);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.82);
+}
+
 function fecharScanner(){
-  lendo = false; $("#scanner").style.display = "none";
+  lendo = false;
+  $("#scanner").style.display = "none";
+  const m = $("#mira"); if(m) m.className = "mira";
+  const b = $("#btnManual"); if(b) b.style.display = "none";
   if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
 }
 async function tratarCodigo(valor){
@@ -1843,6 +1947,35 @@ const ACOES = {
 
   /* cadastro */
   fotoCapa: () => $("#arqCapa").click(),
+  capturarAgora: () => capturarAgora(),
+  capturaAuto: () => {
+    if(tela !== "cadastro") ir("cadastro");
+    abrirCaptura(
+      async foto => {
+        const thumb = await reduzir(await (await fetch(foto)).blob(), 260, 0.6);
+        ctx.fotos = [{grande: foto, thumb}];
+        ctx.form.capa = thumb;
+        desenhar();
+        avisar("Foto capturada. Identificando o livro...");
+        try{
+          const r = await identificarPorFoto([base64(foto)], "");
+          const f = ctx.form;
+          ["titulo","autor","editora","ano","isbn","edicao","paginas","sinopse"].forEach(k => { if(r[k]) f[k] = String(r[k]); });
+          if(r.isbn){ const d = await buscarBiblio({isbn: r.isbn}); if(d) Object.assign(f, d, {capa: f.capa, sinopse: f.sinopse || d.sinopse}); }
+          f.categoria = CATEGORIAS.includes(r.categoria) ? r.categoria : await definirCategoria(f);
+          desenhar();
+          avisar(f.titulo ? "Confira e salve." : "Não identifiquei. Digite o título e busque.", f.titulo ? "ok" : "erro");
+        }catch(e){ desenhar(); avisar(e.message, "erro"); }
+      },
+      async codigo => {
+        avisar("Código lido. Buscando...");
+        const d = await buscarBiblio({isbn: codigo});
+        if(d) Object.assign(ctx.form, d); else ctx.form.isbn = codigo;
+        desenhar();
+        avisar(d ? "Encontrado em " + d.fonte + ". Confira e salve." : "Código lido. Complete os dados.", d ? "ok" : "erro");
+      }
+    );
+  },
   scanISBN: () => abrirScanner(async val => {
     ctx.form.isbn = val;
     avisar("Código lido. Buscando os dados...");
@@ -1904,6 +2037,10 @@ const ACOES = {
     avisar("Preenchido com " + r.fonte + ". Confira antes de salvar.");
   },
   nenhumResultado: () => { ctx.resultados = null; desenhar(); },
+  salvarEProximo: async () => {
+    ctx.emSerie = true;
+    await ACOES.salvarLivro();
+  },
   salvarLivro: async () => {
     const f = ctx.form;
     if(!f.titulo.trim()){ avisar("Informe ao menos o título.", "erro"); return; }
@@ -1917,8 +2054,10 @@ const ACOES = {
       gravarCatalogo(nova);
       S.cfg.proxReg += ctx.qtd;
       await salvarCfg();
-      ir("obra", {id:nova.id});
-      avisar(ctx.qtd>1 ? `Cadastrado. Registros ${de} a ${ate}.` : `Cadastrado. Registro ${de}.`);
+      const serie = ctx.emSerie;
+      const msg = ctx.qtd>1 ? `Cadastrado. Registros ${de} a ${ate}.` : `Cadastrado. Registro ${de}.`;
+      if(serie){ ir("cadastro"); avisar(msg); ACOES.capturaAuto(); }
+      else { ir("obra", {id:nova.id}); avisar(msg); }
     }catch(e){ avisar("Não consegui salvar. Verifique a internet.", "erro"); }
   },
 
