@@ -719,6 +719,53 @@ async function gravarCatalogo(o){
   }catch(e){}
 }
 
+/* Busca por nome do livro: devolve uma lista de opções, com capa, para o
+   usuário escolher a edição certa. É o caminho dos livros antigos, sem código. */
+async function buscarLista(texto){
+  const achados = [];
+  const chave = o => semAcento(o.titulo).slice(0,40) + "|" + semAcento(o.autor).slice(0,20);
+  const vistos = new Set();
+  const juntar = o => { const k = chave(o); if(o.titulo && !vistos.has(k)){ vistos.add(k); achados.push(o); } };
+
+  try{
+    const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=10&q=" + encodeURIComponent(texto));
+    const j = await r.json();
+    (j.items || []).forEach(it => {
+      const v = it.volumeInfo;
+      if(!v || !v.title) return;
+      juntar({
+        titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), autor: (v.authors||[]).join(", "),
+        editora: v.publisher || "", ano: (v.publishedDate||"").slice(0,4),
+        isbn: ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
+        paginas: v.pageCount ? String(v.pageCount) : "", sinopse: (v.description||"").slice(0,600),
+        assuntos: (v.categories||[]).join(" "),
+        categoria: adivinharCategoria((v.categories||[]).join(" ") + " " + (v.description||"")),
+        capaUrl: v.imageLinks ? (v.imageLinks.thumbnail||"").replace("http://","https://") : "",
+        fonte: "Google Books"
+      });
+    });
+  }catch(e){}
+
+  try{
+    const r = await fetch("https://openlibrary.org/search.json?limit=8&q=" + encodeURIComponent(texto));
+    const j = await r.json();
+    (j.docs || []).forEach(d => {
+      if(!d.title) return;
+      juntar({
+        titulo: d.title, autor: (d.author_name||[]).join(", "), editora: (d.publisher||[])[0] || "",
+        ano: d.first_publish_year ? String(d.first_publish_year) : "",
+        isbn: (d.isbn||[])[0] || "", paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "",
+        sinopse: "", assuntos: (d.subject||[]).slice(0,25).join(" "),
+        categoria: adivinharCategoria((d.subject||[]).slice(0,25).join(" ")),
+        capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
+        fonte: "Open Library"
+      });
+    });
+  }catch(e){}
+
+  return achados.slice(0, 12);
+}
+
 async function buscarBiblio({isbn, texto}){
   const limpo = soDigitos(isbn);
   if(limpo.length >= 10){
@@ -994,8 +1041,21 @@ TELAS.cadastro = () => {
     <div class="campo"><label>Ou digite o ISBN ou o título</label>
       <input id="buscaLivro" placeholder="9788522008731 ou O Pequeno Príncipe"></div>
     <button class="btn" data-acao="buscarDados">Buscar dados do livro</button>
+    <p class="rot" style="margin-bottom:0">Livro antigo, sem código de barras? Digite o nome aqui e escolha na lista.</p>
     <div id="statusBusca"></div>
   </div>
+  ${(ctx.resultados && ctx.resultados.length) ? `<div class="cartao">
+    <h2>Qual destes é o seu livro?</h2>
+    ${ctx.resultados.map((r,i)=>`<button class="item" data-acao="escolherResultado" data-i="${i}">
+      ${r.capaUrl ? `<img class="capa" src="${r.capaUrl}" alt="">` : `<span class="capa">📕</span>`}
+      <span style="flex:1;min-width:0">
+        <span class="serif" style="font-size:15.5px;display:block">${esc(r.titulo)}</span>
+        <span class="meta" style="display:block">${esc(r.autor||"Autor não informado")}</span>
+        <span class="meta" style="display:block">${esc([r.editora, r.ano].filter(Boolean).join(", "))}</span>
+        <span class="reg">${esc(r.fonte)}${r.isbn?" · "+esc(r.isbn):""}</span>
+      </span></button>`).join("")}
+    <button class="btn sec mini" style="margin-top:10px" data-acao="nenhumResultado">Nenhum destes, preencher à mão</button>
+  </div>` : ""}
   <div class="cartao"><h2>2. Confira e corrija</h2>
     ${(f.capa || f.capaUrl) ? `<div style="text-align:center;margin-bottom:12px">
       <img src="${f.capa || f.capaUrl}" alt="Capa do livro"
@@ -1567,25 +1627,54 @@ const ACOES = {
     const txt = ($("#buscaLivro").value||"").trim(), s = $("#statusBusca"), temFoto = ctx.fotos.length>0;
     if(!txt && !temFoto){ avisar("Escaneie o código, tire uma foto da capa ou digite o título.", "erro"); return; }
     s.innerHTML = `<div class="rot" style="padding-top:12px"><span class="giro"></span>Procurando...</div>`;
-    let achou = false;
-    if(txt){
-      const d = await buscarBiblio(soDigitos(txt).length>=10 ? {isbn:txt} : {texto:txt});
-      if(d){ Object.assign(ctx.form, d); achou = true; }
+
+    /* ISBN digitado: preenche direto */
+    if(soDigitos(txt).length >= 10){
+      const d = await buscarBiblio({isbn: txt});
+      if(d){ Object.assign(ctx.form, d); ctx.resultados = null; desenhar();
+        avisar("Encontrado em " + d.fonte + ". Confira antes de salvar."); return; }
     }
-    if(!achou && temFoto){
+
+    /* Nome do livro: mostra a lista para escolher */
+    if(txt && soDigitos(txt).length < 10){
+      const lista = await buscarLista(txt);
+      if(lista.length){
+        ctx.resultados = lista; desenhar();
+        avisar(lista.length + " resultado(s). Toque no livro certo.");
+        return;
+      }
+    }
+
+    /* Sobrou a foto da capa, com a IA */
+    if(temFoto){
       try{
         const r = await identificarPorFoto(ctx.fotos.map(f=>base64(f.grande)), txt);
         const f = ctx.form;
         ["titulo","autor","editora","ano","isbn","edicao","paginas","sinopse"].forEach(k=>{ if(r[k]) f[k]=String(r[k]); });
         f.categoria = CATEGORIAS.includes(r.categoria) ? r.categoria : await definirCategoria(f);
         if(r.isbn){ const d = await buscarBiblio({isbn:r.isbn}); if(d) Object.assign(f, d, {sinopse: f.sinopse||d.sinopse}); }
-        achou = !!f.titulo;
+        ctx.resultados = null; desenhar();
+        avisar(f.titulo ? "Dados preenchidos. Confira antes de salvar." : "Não consegui identificar. Preencha à mão.",
+          f.titulo ? "ok" : "erro");
+        return;
       }catch(e){ desenhar(); avisar(e.message, "erro"); return; }
     }
+
     desenhar();
-    avisar(achou ? "Dados preenchidos. Confira antes de salvar."
-      : "Não achei em nenhuma base. Preencha os campos à mão e salve normalmente.", achou?"ok":"erro");
+    avisar("Não achei esse livro. Preencha à mão: o que você cadastrar fica salvo para as outras escolas.", "erro");
   },
+  escolherResultado: async el => {
+    const r = ctx.resultados[Number(el.dataset.i)];
+    if(!r) return;
+    avisar("Trazendo os dados e a capa...");
+    r.capa = await baixarCapa(r.capaUrl, soDigitos(r.isbn));
+    r.categoria = await definirCategoria(r);
+    Object.assign(ctx.form, r);
+    ctx.resultados = null;
+    desenhar();
+    avisar("Preenchido com " + r.fonte + ". Confira antes de salvar.");
+  },
+  nenhumResultado: () => { ctx.resultados = null; desenhar(); },
   salvarLivro: async () => {
     const f = ctx.form;
     if(!f.titulo.trim()){ avisar("Informe ao menos o título.", "erro"); return; }
