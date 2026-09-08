@@ -621,14 +621,58 @@ async function baixarCapa(url, isbn){
   return "";
 }
 
+async function porOpenLibrarySearch(isbn){
+  const r = await fetch("https://openlibrary.org/search.json?isbn=" + isbn + "&limit=1");
+  if(!r.ok) return null;
+  const j = await r.json();
+  const d = j.docs && j.docs[0];
+  if(!d || !d.title) return null;
+  return {
+    titulo: d.title, autor: (d.author_name || []).join(", "),
+    editora: (d.publisher || [])[0] || "",
+    ano: d.first_publish_year ? String(d.first_publish_year) : "", isbn: isbn,
+    paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "", sinopse: "",
+    categoria: adivinharCategoria((d.subject || []).slice(0, 25).join(" ")),
+    capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
+    fonte: "Open Library"
+  };
+}
+
+/* Catálogo Máximus: tudo que uma escola cadastra à mão fica disponível para as
+   outras. Livro estrangeiro ou antigo que nenhuma base tem entra aqui uma vez
+   só, e da próxima vez que alguém escanear já vem preenchido. */
+async function lerCatalogo(isbn){
+  try{
+    const d = await FB.F.getDoc(FB.F.doc(FB.db, "catalogo", isbn));
+    if(d.exists() && d.data().titulo) return Object.assign({}, d.data(), {fonte: "Catálogo Máximus"});
+  }catch(e){}
+  return null;
+}
+async function gravarCatalogo(o){
+  const isbn = soDigitos(o.isbn);
+  if(isbn.length < 10 || !o.titulo || !USUARIO) return;
+  try{
+    await FB.F.setDoc(FB.F.doc(FB.db, "catalogo", isbn), {
+      isbn, titulo: o.titulo, autor: o.autor || "", editora: o.editora || "", ano: o.ano || "",
+      edicao: o.edicao || "", categoria: o.categoria || "", paginas: o.paginas || "",
+      sinopse: o.sinopse || "", capa: o.capa || "", capaUrl: o.capaUrl || "",
+      atualizadoEm: new Date().toISOString(), por: USUARIO.uid
+    }, {merge: true});
+  }catch(e){}
+}
+
 async function buscarBiblio({isbn, texto}){
   const limpo = soDigitos(isbn);
   if(limpo.length >= 10){
+    const doCatalogo = await lerCatalogo(limpo);
+    if(doCatalogo) return doCatalogo;
     const fontes = [
       () => porBrasilAPI(limpo),
       () => porMercadoEditorial(limpo),
       () => porGoogleBooks("isbn:" + limpo, limpo),
-      () => porOpenLibrary(limpo)
+      () => porGoogleBooks(limpo, limpo),
+      () => porOpenLibrary(limpo),
+      () => porOpenLibrarySearch(limpo)
     ];
     for(const f of fontes){
       try{
@@ -1446,7 +1490,7 @@ const ACOES = {
     if(d) Object.assign(ctx.form, d, {isbn: d.isbn || val});
     desenhar();
     avisar(d ? "Encontrado em "+d.fonte+(d.capa?", com a capa":"")+". Confira antes de salvar."
-      : "Livro não está nas bases. O ISBN já foi preenchido: complete o título e o autor à mão e salve normalmente.", d?"ok":"erro");
+      : "Não achei em nenhuma base. Tire uma foto da capa ou preencha à mão: o que você cadastrar fica salvo para as outras escolas.", d?"ok":"erro");
   }),
   buscarDados: async () => {
     const txt = ($("#buscaLivro").value||"").trim(), s = $("#statusBusca"), temFoto = ctx.fotos.length>0;
@@ -1481,6 +1525,7 @@ const ACOES = {
     const de = reg(S.cfg.proxReg), ate = reg(S.cfg.proxReg+ctx.qtd-1);
     try{
       await guardar("obras", nova);
+      gravarCatalogo(nova);
       S.cfg.proxReg += ctx.qtd;
       await salvarCfg();
       ir("obra", {id:nova.id});
@@ -1499,6 +1544,7 @@ const ACOES = {
     const o = Object.assign({}, obra(ctx.id));
     document.querySelectorAll("[data-edit]").forEach(i => o[i.dataset.edit] = i.value);
     await guardar("obras", o);
+    gravarCatalogo(o);
     ctx.editando = false; desenhar(); avisar("Ficha atualizada.");
   },
   removerObra: async () => {
