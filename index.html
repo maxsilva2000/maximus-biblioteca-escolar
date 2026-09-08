@@ -237,7 +237,7 @@ function marcaImg(estilo, mono){
 /* ================================================================
    Firebase: contas e dados na nuvem
    ================================================================ */
-let FB = null, USUARIO = null, escutas = [];
+let FB = null, USUARIO = null, escutas = [], USUARIOS = [];
 const DEV_EMAILS = ["maximocontato1@gmail.com"];
 const WHATS = "5566996641404";
 const PAPEIS = {dev:"Desenvolvedor", admin:"Administrador", auxiliar:"Auxiliar", aluno:"Aluno", bloqueado:"Bloqueado"};
@@ -1716,8 +1716,10 @@ TELAS.escolas = () => {
 };
 
 TELAS.usuarios = () => {
-  const lista = ctx.usuarios || [];
-  const pend = lista.filter(u=>!u.aprovado), ativos = lista.filter(u=>u.aprovado);
+  const lista = USUARIOS;
+  const pend = lista.filter(u => !u.aprovado);
+  const equipe = lista.filter(u => u.aprovado && u.papel !== "aluno");
+  const alunos = lista.filter(u => u.aprovado && u.papel === "aluno");
   const cartao = u => `<div class="num">
     <div style="min-width:0">
       <div class="serif" style="font-size:15px">${esc(u.nome||"Sem nome")}</div>
@@ -1736,11 +1738,15 @@ TELAS.usuarios = () => {
     <div class="linhab"><button class="btn mini sec" data-acao="recarregarUsuarios">Atualizar lista</button></div>
     <div class="cartao"><h2>Aguardando liberação${pend.length?" ("+pend.length+")":""}</h2>
       ${pend.length?pend.map(cartao).join(""):`<div class="vazio">Ninguém na fila.</div>`}</div>
-    <div class="cartao"><h2>Ativos</h2>
-      ${ativos.length?ativos.map(cartao).join(""):`<div class="vazio">Nenhum usuário ativo.</div>`}</div>
+    <div class="cartao"><h2>Equipe da biblioteca${equipe.length?" ("+equipe.length+")":""}</h2>
+      ${equipe.length?equipe.map(cartao).join(""):`<div class="vazio">Nenhum usuário ativo.</div>`}</div>
+    <div class="cartao"><h2>Alunos com conta${alunos.length?" ("+alunos.length+")":""}</h2>
+      ${alunos.length?alunos.map(cartao).join(""):`<div class="vazio">Nenhum aluno cadastrado ainda.</div>`}</div>
     ${ehDev()?`<div class="cartao"><h2>Painel do desenvolvedor</h2>
       <div class="num"><span class="rot">Contas no sistema</span><b>${lista.length}</b></div>
-      <div class="num"><span class="rot">Bibliotecas</span><b>${new Set(lista.map(u=>u.bibliotecaId)).size}</b></div>
+      <div class="num"><span class="rot">Equipe</span><b>${equipe.length}</b></div>
+      <div class="num"><span class="rot">Alunos</span><b>${alunos.length}</b></div>
+      <div class="num"><span class="rot">Bibliotecas em uso</span><b>${new Set(lista.map(u=>u.bibliotecaId)).size}</b></div>
       <p class="rot">Você vê e libera as contas de todas as bibliotecas.</p></div>`:""}`;
 };
 
@@ -1824,6 +1830,7 @@ const ACOES = {
   aba: el => {
     const t = el.dataset.t;
     ir(t);
+    if(t==="usuarios") carregarUsuarios();
     if(t==="escolas") listarEscolas().then(l => { ctx.escolas = l; if(tela==="escolas") desenhar(); });
   },
   ajustes: () => ir("ajustes"),
@@ -2170,9 +2177,13 @@ async function carregarUsuarios(){
     const col = FB.F.collection(FB.db, "usuarios");
     const q = ehDev() ? col : FB.F.query(col, FB.F.where("bibliotecaId","==",USUARIO.bibliotecaId));
     const s = await FB.F.getDocs(q);
-    ctx.usuarios = s.docs.map(d=>d.data()).sort((a,b)=>semAcento(a.nome)<semAcento(b.nome)?-1:1);
+    USUARIOS = s.docs.map(d=>d.data()).sort((a,b)=>semAcento(a.nome)<semAcento(b.nome)?-1:1);
     desenhar();
-  }catch(e){ avisar("Não consegui carregar a lista de usuários.", "erro"); }
+  }catch(e){
+    USUARIOS = [];
+    desenhar();
+    avisar("Não consegui ler a lista de usuários. Confira se as regras do Firestore foram publicadas.", "erro");
+  }
 }
 async function mudarUsuario(u, campos){
   try{
