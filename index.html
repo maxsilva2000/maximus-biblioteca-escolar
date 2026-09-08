@@ -420,6 +420,28 @@ function slugEscola(nome){
   return "esc-" + semAcento(nome).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
 }
 
+/* Convites: a bibliotecária gera um código e quem usar entra direto no acervo
+   dela, já liberado, sem passar pela fila de aprovação. */
+const LETRAS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const novoCodigo = () => Array.from({length:6}, () =>
+  LETRAS[Math.floor(Math.random()*LETRAS.length)]).join("");
+
+async function lerConvite(codigo){
+  try{
+    const d = await FB.F.getDoc(FB.F.doc(FB.db, "convites", codigo.trim().toUpperCase()));
+    if(d.exists() && d.data().ativo) return d.data();
+  }catch(e){}
+  return null;
+}
+async function listarConvites(){
+  try{
+    const q = FB.F.query(FB.F.collection(FB.db, "convites"),
+      FB.F.where("bibliotecaId", "==", USUARIO.bibliotecaId));
+    const s = await FB.F.getDocs(q);
+    return s.docs.map(d => d.data()).filter(c => c.ativo);
+  }catch(e){ return []; }
+}
+
 async function listarEscolas(){
   const mapa = new Map();
   ESCOLAS_PADRAO.forEach(nome => mapa.set(slugEscola(nome), {id: slugEscola(nome), nome, padrao: true}));
@@ -430,13 +452,24 @@ async function listarEscolas(){
   return [...mapa.values()].sort((a,b) => semAcento(a.nome) < semAcento(b.nome) ? -1 : 1);
 }
 
-async function criarConta({nome, email, senha, escolaId, escolaNome, tipo, turma, turno}){
+async function criarConta({nome, email, senha, escolaId, escolaNome, tipo, turma, turno, convite}){
   const cred = await FB.A.createUserWithEmailAndPassword(FB.auth, email.trim(), senha);
   const u = cred.user.uid;
   await FB.A.updateProfile(cred.user, {displayName: nome}).catch(()=>{});
   const dev = DEV_EMAILS.includes(email.trim().toLowerCase());
 
   let bibliotecaId, papel, nomeEscola, criarBiblioteca = false;
+
+  /* código de convite: entra já liberado no acervo de quem convidou */
+  if(convite && convite.trim() && tipo !== "aluno"){
+    const c = await lerConvite(convite);
+    if(!c) throw new Error("Código de convite inválido ou desativado.");
+    const perfilConvidado = {uid:u, nome, email: email.trim().toLowerCase(), papel: dev ? "dev" : "auxiliar",
+      aprovado: true, bibliotecaId: c.bibliotecaId, escola: c.escola || "",
+      convite: c.codigo, criadoEm: new Date().toISOString()};
+    await FB.F.setDoc(FB.F.doc(FB.db, "usuarios", u), perfilConvidado);
+    return perfilConvidado;
+  }
 
   if(tipo === "aluno" && !dev){
     const d = await FB.F.getDoc(FB.F.doc(FB.db, "escolas", escolaId));
@@ -987,6 +1020,7 @@ DEPOIS.entrar = () => {
   if(tipo) tipo.addEventListener("change", () => {
     ctx.tipo = tipo.value;
     $("#campoAluno").style.display = tipo.value === "aluno" ? "block" : "none";
+    $("#campoConvite").style.display = tipo.value === "aluno" ? "none" : "block";
   });
   const sel = $("#fEscolaSel");
   if(!sel) return;
@@ -1048,6 +1082,10 @@ TELAS.entrar = () => {
       <div class="campo"><label>Seu nome</label><input id="fNome" autocomplete="name"></div>
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
       <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres"></div>
+      <div class="campo" id="campoConvite" style="display:${ctx.tipo==="aluno"?"none":"block"}">
+        <label>Código de convite, se você recebeu um</label>
+        <input id="fConvite" value="${esc(ctx.convite||"")}" placeholder="deixe vazio se não tiver"
+          style="text-transform:uppercase"></div>
       <div class="campo"><label>Escola</label>
         <select id="fEscolaSel">
           <option value="">${ctx.escolas ? "Selecione a escola" : "Carregando escolas..."}</option>
@@ -1750,6 +1788,20 @@ TELAS.usuarios = () => {
       `:""}
     </div></div>`;
   return `
+    <div class="cartao"><h2>Convidar para o acervo</h2>
+      <p class="rot" style="margin-top:0">Gere um código e passe para quem vai ajudar a catalogar.
+      Quem usar o código entra direto no acervo desta escola, sem esperar liberação.</p>
+      ${(ctx.convites||[]).map(c => `<div class="num">
+        <div>
+          <div class="serif" style="font-size:22px;letter-spacing:.18em;color:var(--ouro2)">${esc(c.codigo)}</div>
+          <div class="reg">criado em ${brDate((c.criadoEm||"").slice(0,10))}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="chip" data-acao="enviarConvite" data-c="${esc(c.codigo)}">Enviar</button>
+          <button class="chip" data-acao="desativarConvite" data-c="${esc(c.codigo)}">Desativar</button>
+        </div></div>`).join("")}
+      <button class="btn mini" style="margin-top:12px" data-acao="gerarConvite">Gerar código de convite</button>
+    </div>
     <div class="linhab"><button class="btn mini sec" data-acao="recarregarUsuarios">Atualizar lista</button></div>
     <div class="cartao"><h2>Aguardando liberação${pend.length?" ("+pend.length+")":""}</h2>
       ${pend.length?pend.map(cartao).join(""):`<div class="vazio">Ninguém na fila.</div>`}</div>
@@ -1908,13 +1960,14 @@ const ACOES = {
     const tipo = $("#fTipo") ? $("#fTipo").value : "equipe";
     const turma = $("#fTurma") ? $("#fTurma").value.trim() : "";
     const turno = $("#fTurno") ? $("#fTurno").value : "";
+    const convite = $("#fConvite") ? $("#fConvite").value.trim().toUpperCase() : "";
     if(!nome || !email || !senha){ avisar("Preencha nome, e-mail e senha.", "erro"); return; }
-    if(!escolaId){ avisar("Escolha a escola na lista.", "erro"); return; }
-    if(escolaId === "__nova" && !escolaNome){ avisar("Informe o nome da escola.", "erro"); return; }
+    if(!escolaId && !convite){ avisar("Escolha a escola na lista ou informe o código de convite.", "erro"); return; }
+    if(!convite && escolaId === "__nova" && !escolaNome){ avisar("Informe o nome da escola.", "erro"); return; }
     if(tipo === "aluno" && escolaId === "__nova"){ avisar("Aluno precisa escolher uma escola já cadastrada.", "erro"); return; }
     if(tipo === "aluno" && !turma){ avisar("Informe a sua turma.", "erro"); return; }
     $("#statusAuth").innerHTML = `<div class="rot" style="padding-top:10px"><span class="giro"></span>Criando a conta...</div>`;
-    try{ await criarConta({nome, email, senha, escolaId, escolaNome, tipo, turma, turno}); }
+    try{ await criarConta({nome, email, senha, escolaId, escolaNome, tipo, turma, turno, convite}); }
     catch(err){ $("#statusAuth").innerHTML = ""; avisar(erroAuth(err), "erro"); }
   },
   recuperar: async () => {
@@ -1934,7 +1987,7 @@ const ACOES = {
   aba: el => {
     const t = el.dataset.t;
     ir(t);
-    if(t==="usuarios") carregarUsuarios();
+    if(t==="usuarios"){ carregarUsuarios(); listarConvites().then(l => { ctx.convites = l; if(tela==="usuarios") desenhar(); }); }
     if(t==="escolas") listarEscolas().then(l => { ctx.escolas = l; if(tela==="escolas") desenhar(); });
   },
   ajustes: () => ir("ajustes"),
@@ -2212,6 +2265,35 @@ const ACOES = {
 
   /* usuários */
   recarregarUsuarios: () => carregarUsuarios(),
+  gerarConvite: async () => {
+    if(!exigeAdmin()) return;
+    const codigo = novoCodigo();
+    try{
+      await FB.F.setDoc(FB.F.doc(FB.db, "convites", codigo), {codigo, bibliotecaId: USUARIO.bibliotecaId,
+        escola: S.cfg.escola || USUARIO.escola || "", criadoPor: USUARIO.uid,
+        criadoEm: new Date().toISOString(), ativo: true});
+      ctx.convites = await listarConvites();
+      desenhar();
+      avisar("Código " + codigo + " criado.");
+    }catch(e){ avisar("Não consegui criar o convite.", "erro"); }
+  },
+  enviarConvite: el => {
+    const c = el.dataset.c;
+    const link = location.origin + location.pathname + "?convite=" + c;
+    const txt = encodeURIComponent("Você foi convidado para ajudar na biblioteca "
+      + (S.cfg.escola || "") + ".\n\nCrie sua conta no Máximus Biblioteca Escolar com o código " + c
+      + "\n" + link);
+    window.open("https://wa.me/?text=" + txt, "_blank");
+  },
+  desativarConvite: async el => {
+    if(!confirm("Desativar o código " + el.dataset.c + "? Quem já entrou continua com acesso.")) return;
+    try{
+      await FB.F.updateDoc(FB.F.doc(FB.db, "convites", el.dataset.c), {ativo: false});
+      ctx.convites = await listarConvites();
+      desenhar();
+      avisar("Código desativado.");
+    }catch(e){ avisar("Não consegui desativar.", "erro"); }
+  },
   recarregarEscolas: async () => { ctx.escolas = await listarEscolas(); desenhar(); },
   criarEscola: async () => {
     const nome = ($("#novaEscola").value||"").trim();
@@ -2459,12 +2541,19 @@ document.addEventListener("change", async e => {
   aplicarTema(temaAtual());
   const c = window.FIREBASE_CONFIG;
   if(!c || !c.apiKey || String(c.apiKey).includes("COLE_")){ tela = "semconfig"; desenhar(); return; }
+  const conviteURL = new URLSearchParams(location.search).get("convite");
   tela = "abrindo"; ctx = {}; desenhar();
   try{ await iniciarFirebase(); }
   catch(e){ avisar("Não consegui iniciar o Firebase. Confira o config.js.", "erro"); return; }
 
   FB.A.onAuthStateChanged(FB.auth, async user => {
-    if(!user){ USUARIO = null; pararEscutas(); tela = "entrar"; ctx = {modo:"entrar"}; desenhar(); return; }
+    if(!user){
+      USUARIO = null; pararEscutas(); tela = "entrar";
+      ctx = conviteURL ? {modo:"criar", convite: conviteURL.toUpperCase(), tipo:"equipe"} : {modo:"entrar"};
+      desenhar();
+      if(conviteURL) avisar("Convite recebido. Preencha seus dados para entrar no acervo.");
+      return;
+    }
     if(tela === "abrindo") desenhar();
     let perfil = null;
     for(let i=0;i<6 && !perfil;i++){
