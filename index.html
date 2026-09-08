@@ -240,8 +240,11 @@ function marcaImg(estilo, mono){
 let FB = null, USUARIO = null, escutas = [];
 const DEV_EMAILS = ["maximocontato1@gmail.com"];
 const WHATS = "5566996641404";
-const PAPEIS = {dev:"Desenvolvedor", admin:"Administrador", auxiliar:"Auxiliar", bloqueado:"Bloqueado"};
+const PAPEIS = {dev:"Desenvolvedor", admin:"Administrador", auxiliar:"Auxiliar", aluno:"Aluno", bloqueado:"Bloqueado"};
+const TURNOS = ["Matutino", "Vespertino", "Noturno", "Integral"];
 const ehDev = () => !!USUARIO && USUARIO.papel === "dev";
+const ehAluno = () => !!USUARIO && USUARIO.papel === "aluno";
+const daEquipe = () => !!USUARIO && ["dev","admin","auxiliar"].includes(USUARIO.papel);
 const ehAdmin = () => !!USUARIO && (USUARIO.papel === "admin" || ehDev());
 function exigeAdmin(){
   if(ehAdmin()) return true;
@@ -282,7 +285,7 @@ const apagar = (loja, id) => { if(!podeEscrever()) return Promise.reject(new Err
 async function todos(loja){ const s = await FB.F.getDocs(refCol(loja)); return s.docs.map(d=>d.data()); }
 async function limpar(loja){ const s = await FB.F.getDocs(refCol(loja)); await Promise.all(s.docs.map(d=>FB.F.deleteDoc(d.ref))); }
 
-const S = { obras:[], alunos:[], emprestimos:[],
+const S = { obras:[], alunos:[], emprestimos:[], pedidos:[],
   cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", logo:""} };
 let tela = "inicio", ctx = {};
 
@@ -309,6 +312,13 @@ function ouvirDados(){
   ouvirPerfil();
   const on = FB.F.onSnapshot;
   escutas.push(on(refCol("obras"), s => { S.obras = s.docs.map(d=>d.data()); desenhar(); }));
+  if(ehAluno()){
+    escutas.push(on(FB.F.query(refCol("pedidos"), FB.F.where("alunoUid","==",USUARIO.uid)),
+      s => { S.pedidos = s.docs.map(d=>d.data()); desenhar(); }));
+    escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); desenhar(); } }));
+    return;
+  }
+  escutas.push(on(refCol("pedidos"), s => { S.pedidos = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCol("alunos"), s => { S.alunos = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCol("emprestimos"), s => { S.emprestimos = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); desenhar(); } }));
@@ -317,10 +327,14 @@ function pararEscutas(){ escutas.forEach(f => { try{ f(); }catch(e){} }); escuta
 
 async function carregarTudo(){
   const d = await FB.F.getDoc(refCfg());
-  if(d.exists()) S.cfg = Object.assign(S.cfg, d.data()); else await salvarCfg();
+  if(d.exists()) S.cfg = Object.assign(S.cfg, d.data());
+  else if(daEquipe()) await salvarCfg();
   S.obras = await todos("obras");
-  S.alunos = await todos("alunos");
-  S.emprestimos = await todos("emprestimos");
+  if(daEquipe()){
+    S.alunos = await todos("alunos");
+    S.emprestimos = await todos("emprestimos");
+    S.pedidos = await todos("pedidos");
+  }
   ouvirDados();
 }
 
@@ -405,13 +419,24 @@ async function listarEscolas(){
   return [...mapa.values()].sort((a,b) => semAcento(a.nome) < semAcento(b.nome) ? -1 : 1);
 }
 
-async function criarConta({nome, email, senha, escolaId, escolaNome}){
+async function criarConta({nome, email, senha, escolaId, escolaNome, tipo, turma, turno}){
   const cred = await FB.A.createUserWithEmailAndPassword(FB.auth, email.trim(), senha);
   const u = cred.user.uid;
   await FB.A.updateProfile(cred.user, {displayName: nome}).catch(()=>{});
   const dev = DEV_EMAILS.includes(email.trim().toLowerCase());
 
   let bibliotecaId, papel, nomeEscola, criarBiblioteca = false;
+
+  if(tipo === "aluno" && !dev){
+    const d = await FB.F.getDoc(FB.F.doc(FB.db, "escolas", escolaId));
+    if(!d.exists()) throw new Error("Essa escola ainda não usa o Máximus. Fale com a pessoa responsável pela biblioteca.");
+    const perfilAluno = {uid:u, nome, email: email.trim().toLowerCase(), papel:"aluno", aprovado:true,
+      bibliotecaId: d.data().bibliotecaId, escola: d.data().nome, turma: turma||"", turno: turno||"",
+      criadoEm: new Date().toISOString()};
+    await FB.F.setDoc(FB.F.doc(FB.db, "usuarios", u), perfilAluno);
+    return perfilAluno;
+  }
+
   if(escolaId && escolaId !== "__nova"){
     const d = await FB.F.getDoc(FB.F.doc(FB.db, "escolas", escolaId));
     if(d.exists()){
@@ -490,7 +515,17 @@ function statusDe(registro){
   if(e) return diasAte(e.prevista) < 0 ? "atrasado" : "emprestado";
   const o = obraDoRegistro(registro);
   const x = o && o.exemplares.find(x => x.registro===registro);
+  if(x && x.emprestado) return "emprestado";
   return (x && x.reservado) ? "reservado" : "disponivel";
+}
+/* marca o exemplar na própria ficha do livro, para o aluno ver a disponibilidade
+   sem precisar ler os empréstimos, que têm nomes de outros alunos */
+async function marcarExemplar(registro, emprestado){
+  const o = obraDoRegistro(registro);
+  if(!o) return;
+  const nova = Object.assign({}, o, {exemplares: o.exemplares.map(x =>
+    x.registro === registro ? Object.assign({}, x, {emprestado}) : x)});
+  try{ await guardar("obras", nova); }catch(e){}
 }
 function totais(){
   const st = S.obras.flatMap(o => o.exemplares.map(x => statusDe(x.registro)));
@@ -874,11 +909,14 @@ function svgBarras(valor, altura=36){
 const TITULOS = {inicio:()=>S.cfg.escola||"Máximus", cadastro:()=>"Cadastrar livro", acervo:()=>"Acervo",
   obra:()=>"Ficha do livro", emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos",
   aluno:()=>"Ficha do aluno", relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiquetas",
-  usuarios:()=>"Usuários", escolas:()=>"Escolas", abrindo:()=>"Máximus", entrar:()=>"Máximus", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
+  usuarios:()=>"Usuários", escolas:()=>"Escolas", abrindo:()=>"Máximus", entrar:()=>"Máximus",
+  catalogo:()=>S.cfg.escola||"Catálogo", meuspedidos:()=>"Meus pedidos", pedidos:()=>"Pedidos dos alunos", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
 const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos",
-  etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes"};
-const ABAS = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
+  etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes", pedidos:"emprestimos"};
+const ABAS_EQUIPE = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
   ["emprestimos","📖","Empréstimos"],["alunos","🎓","Alunos"],["relatorios","📊","Relatórios"]];
+const ABAS_ALUNO = [["catalogo","📚","Catálogo"],["meuspedidos","📖","Meus pedidos"],["ajustes","⚙️","Conta"]];
+const abas = () => ehAluno() ? ABAS_ALUNO : ABAS_EQUIPE;
 
 const formVazio = () => ({titulo:"",autor:"",editora:"",ano:"",isbn:"",edicao:"",categoria:"",paginas:"",
   sinopse:"",capa:"",capaUrl:"",estante:"",prateleira:"",secao:""});
@@ -894,6 +932,11 @@ function ir(t, dados){
 const TELAS = {}, DEPOIS = {};
 
 DEPOIS.entrar = () => {
+  const tipo = $("#fTipo");
+  if(tipo) tipo.addEventListener("change", () => {
+    ctx.tipo = tipo.value;
+    $("#campoAluno").style.display = tipo.value === "aluno" ? "block" : "none";
+  });
   const sel = $("#fEscolaSel");
   if(!sel) return;
   sel.addEventListener("change", () => {
@@ -913,11 +956,11 @@ function desenhar(){
 
   const b = $("#acaoTopo");
   if(logado && VOLTA[tela]){ b.hidden=false; b.textContent="Voltar"; b.dataset.acao="voltar"; }
-  else if(logado && tela==="inicio"){ b.hidden=false; b.textContent="Ajustes"; b.dataset.acao="ajustes"; }
+  else if(logado && (tela==="inicio" || tela==="catalogo")){ b.hidden=false; b.textContent="Ajustes"; b.dataset.acao="ajustes"; }
   else b.hidden = true;
 
   $("#app").innerHTML = (TELAS[tela]||(()=>""))();
-  $("#nav").innerHTML = logado ? ABAS.map(([t,i,n]) =>
+  $("#nav").innerHTML = logado ? abas().map(([t,i,n]) =>
     `<button data-acao="aba" data-t="${t}" class="${tela===t?"on":""}"><span class="ico">${i}</span>${n}</button>`).join("") : "";
   if(DEPOIS[tela]) DEPOIS[tela]();
 }
@@ -946,6 +989,11 @@ TELAS.entrar = () => {
       <button data-acao="modoCriar" class="${criar?"on":""}">Criar conta</button>
     </div>
     ${criar ? `
+      <div class="campo"><label>Quem é você?</label>
+        <select id="fTipo">
+          <option value="equipe" ${ctx.tipo!=="aluno"?"selected":""}>Trabalho na biblioteca da escola</option>
+          <option value="aluno" ${ctx.tipo==="aluno"?"selected":""}>Sou aluno</option>
+        </select></div>
       <div class="campo"><label>Seu nome</label><input id="fNome" autocomplete="name"></div>
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
       <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres"></div>
@@ -958,9 +1006,16 @@ TELAS.entrar = () => {
       <div class="campo" id="campoNova" style="display:none">
         <label>Nome da escola</label>
         <input id="fEscola" placeholder="EMEB Prefeito Fausto de Sousa Faria"></div>
+      <div id="campoAluno" style="display:${ctx.tipo==="aluno"?"block":"none"}">
+        <div class="dupla">
+          <div class="campo"><label>Turma</label><input id="fTurma" placeholder="5º Ano H"></div>
+          <div class="campo"><label>Turno</label>
+            <select id="fTurno">${TURNOS.map(t=>`<option>${t}</option>`).join("")}</select></div>
+        </div>
+      </div>
       <button class="btn" data-acao="registrar">Criar conta</button>
-      <p class="rot" style="margin-bottom:0">Se a escola já estiver na lista, você entra como auxiliar dela.
-      Toda conta nova passa por liberação antes do primeiro acesso.</p>
+      <p class="rot" style="margin-bottom:0">Aluno entra direto e pode ver o acervo e pedir livros.
+      Quem trabalha na biblioteca passa por liberação antes do primeiro acesso.</p>
     ` : `
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
       <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="current-password"></div>
@@ -1006,6 +1061,9 @@ TELAS.inicio = () => {
     <div class="num"><span class="rot">🔴 Atrasados</span><b>${t.atrasados}</b></div>
     <div class="num"><span class="rot">🎓 Alunos cadastrados</span><b>${t.alunos}</b></div>
   </div>
+  ${S.pedidos.filter(p=>p.status==="aguardando").length ? `<div class="aviso">
+    <b>${S.pedidos.filter(p=>p.status==="aguardando").length}</b> pedido(s) de aluno esperando.
+    <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="pedidos">Ver pedidos</button></div>`:""}
   ${(atras.length||venc.length) ? `<div class="aviso">
     ${atras.length?`<div><b>${atras.length}</b> ${atras.length===1?"livro atrasado":"livros atrasados"}.</div>`:""}
     ${venc.length?`<div><b>${venc.length}</b> ${venc.length===1?"devolução":"devoluções"} nos próximos dias.</div>`:""}
@@ -1022,6 +1080,93 @@ TELAS.inicio = () => {
     `<div class="num"><span class="serif" style="font-size:14.5px">${esc(o.titulo)}</span><b>${n}</b></div>`).join("")}</div>`:""}
   ${cats.length?`<div class="cartao"><h2>Categorias com mais livros</h2>${cats.map(([c,n])=>
     `<div class="num"><span class="rot">${esc(c)}</span><b>${n}</b></div>`).join("")}</div>`:""}`;
+};
+
+TELAS.catalogo = () => {
+  const q = semAcento(ctx.q||""), cat = ctx.cat||"";
+  const lista = S.obras.filter(o => {
+    if(cat && o.categoria !== cat) return false;
+    if(!q) return true;
+    return [o.titulo,o.autor,o.editora,o.categoria].some(c=>semAcento(c).includes(q));
+  }).sort((a,b)=>semAcento(a.titulo)<semAcento(b.titulo)?-1:1);
+  const usadas = [...new Set(S.obras.map(o=>o.categoria).filter(Boolean))].sort();
+  const meusAbertos = S.pedidos.filter(p => p.status === "aguardando");
+
+  return `
+  <div class="cartao ficha">
+    <h2 style="margin-bottom:4px">Olá, ${esc((USUARIO.nome||"").split(" ")[0])}</h2>
+    <div class="rot">${esc(USUARIO.escola||"")}${USUARIO.turma?" · "+esc(USUARIO.turma):""}${USUARIO.turno?" · "+esc(USUARIO.turno):""}</div>
+  </div>
+  ${meusAbertos.length?`<div class="aviso">Você tem ${meusAbertos.length} pedido(s) aguardando a bibliotecária.
+    <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="meuspedidos">Ver meus pedidos</button></div>`:""}
+  <input class="busca" id="qCatalogo" value="${esc(ctx.q||"")}" placeholder="Procurar por título, autor ou assunto">
+  ${usadas.length?`<div class="chips"><button class="chip ${!cat?"on":""}" data-acao="cat" data-v="">Todos</button>${
+    usadas.map(c=>`<button class="chip ${cat===c?"on":""}" data-acao="cat" data-v="${esc(c)}">${esc(c)}</button>`).join("")}</div>`:""}
+  <div class="cartao">${lista.length===0
+    ? `<div class="vazio">Nenhum livro encontrado.</div>`
+    : lista.map(o=>{
+        const disp = o.exemplares.filter(x => statusDe(x.registro) === "disponivel").length;
+        const pedido = S.pedidos.find(p => p.obraId === o.id && p.status === "aguardando");
+        return `<div class="item" style="cursor:default">
+          ${o.capa||o.capaUrl ? `<img class="capa" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa">📕</span>`}
+          <div style="flex:1;min-width:0">
+            <h3 class="serif">${esc(o.titulo)}</h3>
+            <div class="meta">${esc(o.autor||"Autor não informado")}${o.ano?", "+esc(o.ano):""}</div>
+            <div class="meta">${esc(o.categoria||"")}</div>
+            <div class="linhab" style="margin:8px 0 0;align-items:center">
+              <span class="carimbo c-${disp?"disponivel":"emprestado"}">${disp?"Disponível":"Emprestado"}</span>
+              ${pedido ? `<span class="chip">Pedido enviado</span>`
+                : disp ? `<button class="chip on" data-acao="solicitar" data-id="${o.id}">Pedir emprestado</button>` : ""}
+            </div>
+          </div></div>`;
+      }).join("")}</div>`;
+};
+DEPOIS.catalogo = () => buscaAoVivo("#qCatalogo","q");
+
+TELAS.meuspedidos = () => {
+  const lista = [...S.pedidos].sort((a,b)=>b.criadoEm<a.criadoEm?-1:1);
+  const NOMES = {aguardando:"Aguardando", aprovado:"Aprovado", recusado:"Recusado"};
+  const CORES = {aguardando:"reservado", aprovado:"disponivel", recusado:"atrasado"};
+  return `<div class="cartao"><h2>Meus pedidos</h2>
+    ${lista.length===0?`<div class="vazio">Você ainda não pediu nenhum livro.<div style="margin-top:12px">
+      <button class="btn mini" data-acao="aba" data-t="catalogo">Ver o catálogo</button></div></div>`
+    : lista.map(p=>`<div class="num">
+        <div style="min-width:0">
+          <div class="serif" style="font-size:15px">${esc(p.titulo)}</div>
+          <div class="reg">Pedido em ${brDate((p.criadoEm||"").slice(0,10))}${p.registro?" · registro "+p.registro:""}</div>
+          ${p.status==="aprovado"&&p.prevista?`<div class="meta">Devolver até ${brDate(p.prevista)}</div>`:""}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="carimbo c-${CORES[p.status]}">${NOMES[p.status]}</span>
+          ${p.status==="aguardando"?`<button class="chip" data-acao="cancelarPedido" data-p="${p.id}">Cancelar</button>`:""}
+        </div></div>`).join("")}
+  </div>`;
+};
+
+TELAS.pedidos = () => {
+  const lista = S.pedidos.filter(p=>p.status==="aguardando").sort((a,b)=>a.criadoEm<b.criadoEm?-1:1);
+  const feitos = S.pedidos.filter(p=>p.status!=="aguardando").slice(0,20);
+  return `<div class="cartao"><h2>Aguardando${lista.length?" ("+lista.length+")":""}</h2>
+    ${lista.length===0?`<div class="vazio">Nenhum pedido no momento.</div>`:lista.map(p=>{
+      const o = obra(p.obraId);
+      const disp = o ? o.exemplares.filter(x=>statusDe(x.registro)==="disponivel").length : 0;
+      return `<div class="item" style="cursor:default">
+        ${o&&(o.capa||o.capaUrl)?`<img class="capa" src="${o.capa||o.capaUrl}" alt="">`:`<span class="capa">📕</span>`}
+        <div style="flex:1;min-width:0">
+          <h3 class="serif">${esc(p.titulo)}</h3>
+          <div class="meta">${esc(p.alunoNome)} · ${esc(p.turma||"sem turma")}${p.turno?" · "+esc(p.turno):""}</div>
+          <div class="reg">Pedido em ${brDate((p.criadoEm||"").slice(0,10))} · ${disp} disponível(is)</div>
+          <div class="linhab" style="margin:8px 0 0">
+            <button class="chip on" data-acao="aprovarPedido" data-p="${p.id}" ${disp?"":"disabled"}>Entregar o livro</button>
+            <button class="chip" data-acao="recusarPedido" data-p="${p.id}">Recusar</button>
+          </div>
+        </div></div>`;
+    }).join("")}</div>
+    ${feitos.length?`<div class="cartao"><h2>Últimos atendidos</h2>${feitos.map(p=>`<div class="num">
+      <div><div class="serif" style="font-size:14.5px">${esc(p.titulo)}</div>
+      <div class="reg">${esc(p.alunoNome)}</div></div>
+      <span class="carimbo c-${p.status==="aprovado"?"disponivel":"atrasado"}">${p.status==="aprovado"?"Entregue":"Recusado"}</span>
+      </div>`).join("")}</div>`:""}`;
 };
 
 TELAS.cadastro = () => {
@@ -1241,6 +1386,8 @@ TELAS.emprestimos = () => {
   <button class="btn" data-acao="aba" data-t="novoEmprestimo">Registrar empréstimo</button>
   <div class="linhab" style="margin-top:10px">
     <button class="btn sec" data-acao="scanBalcao">📇 Escanear livro para emprestar ou devolver</button>
+    <button class="btn sec" data-acao="aba" data-t="pedidos">🙋 Pedidos dos alunos${
+      S.pedidos.filter(p=>p.status==="aguardando").length ? " ("+S.pedidos.filter(p=>p.status==="aguardando").length+")" : ""}</button>
   </div>
   <div class="chips">${[["abertos","Em aberto ("+abertos.length+")"],["atrasados","Atrasados ("+atras.length+")"],
     ["vencendo","Vencendo ("+venc.length+")"],["devolvidos","Devolvidos ("+devs.length+")"]]
@@ -1412,7 +1559,19 @@ TELAS.relatorios = () => {
     </div>`;
 };
 
-TELAS.ajustes = () => `
+TELAS.ajustes = () => ehAluno() ? `
+  <div class="cartao"><h2>Sua conta</h2>
+    <div class="num"><span class="rot">Nome</span><span class="dir">${esc(USUARIO.nome||"")}</span></div>
+    <div class="num"><span class="rot">E-mail</span><span class="dir">${esc(USUARIO.email)}</span></div>
+    <div class="num"><span class="rot">Escola</span><span class="dir">${esc(USUARIO.escola||"")}</span></div>
+    <div class="num"><span class="rot">Turma</span><span class="dir">${esc(USUARIO.turma||"")}</span></div>
+    <div class="num"><span class="rot">Turno</span><span class="dir">${esc(USUARIO.turno||"")}</span></div>
+    <div class="linhab" style="margin-top:12px"><button class="btn mini per" data-acao="sair">Sair da conta</button></div>
+  </div>
+  <div class="cartao"><h2>Aparência</h2>
+    <div class="chips">${TEMAS.map(([v,n])=>
+      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
+  </div>` : `
   <div class="cartao"><h2>Sua conta</h2>
     <div class="num"><span class="rot">Nome</span><span class="dir">${esc(USUARIO.nome||"")}</span></div>
     <div class="num"><span class="rot">E-mail</span><span class="dir">${esc(USUARIO.email)}</span></div>
@@ -1579,11 +1738,16 @@ const ACOES = {
     const nome = $("#fNome").value.trim(), email = $("#fEmail").value.trim(), senha = $("#fSenha").value;
     const escolaId = $("#fEscolaSel").value;
     const escolaNome = $("#fEscola") ? $("#fEscola").value.trim() : "";
+    const tipo = $("#fTipo") ? $("#fTipo").value : "equipe";
+    const turma = $("#fTurma") ? $("#fTurma").value.trim() : "";
+    const turno = $("#fTurno") ? $("#fTurno").value : "";
     if(!nome || !email || !senha){ avisar("Preencha nome, e-mail e senha.", "erro"); return; }
     if(!escolaId){ avisar("Escolha a escola na lista.", "erro"); return; }
     if(escolaId === "__nova" && !escolaNome){ avisar("Informe o nome da escola.", "erro"); return; }
+    if(tipo === "aluno" && escolaId === "__nova"){ avisar("Aluno precisa escolher uma escola já cadastrada.", "erro"); return; }
+    if(tipo === "aluno" && !turma){ avisar("Informe a sua turma.", "erro"); return; }
     $("#statusAuth").innerHTML = `<div class="rot" style="padding-top:10px"><span class="giro"></span>Criando a conta...</div>`;
-    try{ await criarConta({nome, email, senha, escolaId, escolaNome}); }
+    try{ await criarConta({nome, email, senha, escolaId, escolaNome, tipo, turma, turno}); }
     catch(err){ $("#statusAuth").innerHTML = ""; avisar(erroAuth(err), "erro"); }
   },
   recuperar: async () => {
@@ -1608,6 +1772,7 @@ const ACOES = {
   ajustes: () => ir("ajustes"),
   imprimir: () => window.print(),
   voltar: () => {
+    if(ehAluno()) return ir("catalogo");
     if(tela==="etiqueta") return ir(ctx.volta || "acervo", ctx.id ? {id:ctx.id} : {});
     return ir(VOLTA[tela] || "inicio", tela==="obra" ? {id:ctx.id} : {});
   },
@@ -1743,6 +1908,7 @@ const ACOES = {
       const a = alunoPorId(e.alunoId);
       if(confirm(`${o.titulo}\nCom ${a ? a.nome : "aluno removido"} desde ${brDate(e.emprestimo)}.\n\nRegistrar a devolução?`)){
         await guardar("emprestimos", Object.assign({}, e, {devolucao: hoje()}));
+        await marcarExemplar(val, false);
         avisar("Devolução registrada: " + o.titulo);
       }
       return;
@@ -1763,12 +1929,14 @@ const ACOES = {
     const novo = {id:uid(), registro:ctx.registro, alunoId:el.dataset.a, emprestimo:hoje(),
       prevista: somarDias(hoje(), S.cfg.prazo), devolucao:null, registradoPor:USUARIO.uid};
     await guardar("emprestimos", novo);
+    await marcarExemplar(novo.registro, true);
     ir("emprestimos");
     avisar("Emprestado. Devolver até "+brDate(novo.prevista)+".");
   },
   devolver: async el => {
     const e = Object.assign({}, S.emprestimos.find(x=>x.id===el.dataset.e), {devolucao: hoje()});
     await guardar("emprestimos", e);
+    await marcarExemplar(e.registro, false);
     desenhar(); avisar("Devolução registrada.");
   },
   renovar: async el => {
@@ -1873,6 +2041,55 @@ const ACOES = {
   aprovar: el => mudarUsuario(el.dataset.u, {aprovado:true}),
   promover: el => mudarUsuario(el.dataset.u, {papel:"admin"}),
   bloquear: el => { if(confirm("Bloquear o acesso desta pessoa?")) mudarUsuario(el.dataset.u, {aprovado:false}); },
+
+  /* aluno */
+  solicitar: async el => {
+    const o = obra(el.dataset.id);
+    if(!o) return;
+    if(S.pedidos.some(p => p.obraId === o.id && p.status === "aguardando")){
+      avisar("Você já pediu esse livro.", "erro"); return; }
+    const p = {id: uid(), obraId: o.id, titulo: o.titulo, alunoUid: USUARIO.uid, alunoNome: USUARIO.nome,
+      turma: USUARIO.turma || "", turno: USUARIO.turno || "", email: USUARIO.email,
+      status: "aguardando", criadoEm: new Date().toISOString()};
+    try{
+      await FB.F.setDoc(refDoc("pedidos", p.id), p);
+      avisar("Pedido enviado. Retire na biblioteca quando for aprovado.");
+    }catch(e){ avisar("Não consegui enviar o pedido.", "erro"); }
+  },
+  cancelarPedido: async el => {
+    try{ await FB.F.deleteDoc(refDoc("pedidos", el.dataset.p)); avisar("Pedido cancelado."); }
+    catch(e){ avisar("Não consegui cancelar.", "erro"); }
+  },
+
+  /* equipe */
+  aprovarPedido: async el => {
+    const p = S.pedidos.find(x => x.id === el.dataset.p);
+    const o = obra(p.obraId);
+    if(!o){ avisar("Esse livro não está mais no acervo.", "erro"); return; }
+    const livre = o.exemplares.find(x => statusDe(x.registro) === "disponivel");
+    if(!livre){ avisar("Não há exemplar disponível agora.", "erro"); return; }
+
+    /* o aluno da conta vira também registro na lista de alunos, se ainda não for */
+    let a = S.alunos.find(x => x.uid === p.alunoUid)
+      || S.alunos.find(x => semAcento(x.nome) === semAcento(p.alunoNome) && semAcento(x.turma||"") === semAcento(p.turma||""));
+    if(!a){
+      a = {id: uid(), uid: p.alunoUid, nome: p.alunoNome, turma: p.turma || "", matricula: "",
+        telefone: "", turno: p.turno || ""};
+      await guardar("alunos", a);
+    }
+    const emp = {id: uid(), registro: livre.registro, alunoId: a.id, emprestimo: hoje(),
+      prevista: somarDias(hoje(), S.cfg.prazo), devolucao: null, registradoPor: USUARIO.uid, pedidoId: p.id};
+    await guardar("emprestimos", emp);
+    await marcarExemplar(livre.registro, true);
+    await guardar("pedidos", Object.assign({}, p, {status: "aprovado", registro: livre.registro,
+      prevista: emp.prevista, atendidoEm: new Date().toISOString()}));
+    avisar("Entregue a " + p.alunoNome + ". Devolver até " + brDate(emp.prevista) + ".");
+  },
+  recusarPedido: async el => {
+    const p = S.pedidos.find(x => x.id === el.dataset.p);
+    await guardar("pedidos", Object.assign({}, p, {status: "recusado", atendidoEm: new Date().toISOString()}));
+    avisar("Pedido recusado.");
+  },
 
   fecharScanner: () => fecharScanner()
 };
@@ -2050,7 +2267,7 @@ document.addEventListener("change", async e => {
     if(!perfil.aprovado){ USUARIO = perfil; tela = "pendente"; desenhar(); USUARIO = perfil; return; }
     USUARIO = perfil;
     try{ await carregarTudo(); }catch(e){ avisar("Não consegui carregar os dados. Verifique a internet.", "erro"); }
-    if(tela==="entrar" || tela==="pendente" || tela==="abrindo") tela = "inicio";
+    if(tela==="entrar" || tela==="pendente" || tela==="abrindo") tela = ehAluno() ? "catalogo" : "inicio";
     desenhar();
     if(ehAdmin()) carregarUsuarios();
   });
