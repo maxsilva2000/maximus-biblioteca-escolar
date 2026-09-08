@@ -314,11 +314,11 @@ function ouvirDados(){
   escutas.push(on(refCol("obras"), s => { S.obras = s.docs.map(d=>d.data()); desenhar(); }));
   if(ehAluno()){
     escutas.push(on(FB.F.query(refCol("pedidos"), FB.F.where("alunoUid","==",USUARIO.uid)),
-      s => { S.pedidos = s.docs.map(d=>d.data()); desenhar(); }));
+      s => { S.pedidos = s.docs.map(d=>d.data()); conferirPedidos(); desenhar(); }));
     escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); desenhar(); } }));
     return;
   }
-  escutas.push(on(refCol("pedidos"), s => { S.pedidos = s.docs.map(d=>d.data()); desenhar(); }));
+  escutas.push(on(refCol("pedidos"), s => { S.pedidos = s.docs.map(d=>d.data()); conferirPedidos(); desenhar(); }));
   escutas.push(on(refCol("alunos"), s => { S.alunos = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCol("emprestimos"), s => { S.emprestimos = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); desenhar(); } }));
@@ -492,6 +492,46 @@ function aplicarTema(t){
   const m = document.querySelector('meta[name="theme-color"]');
   if(m) m.setAttribute("content", cor);
   try{ localStorage.setItem("maximus:tema", t); }catch(e){}
+}
+
+/* ---------- avisos no celular ---------- */
+let pedidosVistos = null;
+
+function podeNotificar(){ return "Notification" in window && Notification.permission === "granted"; }
+
+function pedirNotificacao(){
+  if(!("Notification" in window)){ avisar("Este navegador não mostra avisos.", "erro"); return; }
+  Notification.requestPermission().then(p => {
+    avisar(p === "granted" ? "Avisos ativados neste aparelho."
+      : "Avisos não autorizados. Você pode liberar nas permissões do navegador.", p === "granted" ? "ok" : "erro");
+    desenhar();
+  });
+}
+
+function notificar(titulo, corpo){
+  avisar(titulo + ": " + corpo.replace(/\n/g, " "), "ok");
+  try{
+    if(podeNotificar()) new Notification(titulo, {body: corpo, icon: "icone-192.png", tag: "maximus-" + Date.now()});
+  }catch(e){}
+}
+
+/* compara a lista de pedidos com a anterior e avisa o que mudou */
+function conferirPedidos(){
+  const atual = new Map(S.pedidos.map(p => [p.id, p.status]));
+  if(pedidosVistos){
+    if(daEquipe()){
+      S.pedidos.filter(p => p.status === "aguardando" && !pedidosVistos.has(p.id)).forEach(p =>
+        notificar("Novo pedido de livro",
+          p.alunoNome + " · " + (p.turma || "sem turma") + (p.turno ? " · " + p.turno : "") + "\n" + p.titulo));
+    }else{
+      S.pedidos.filter(p => p.status !== "aguardando" && pedidosVistos.get(p.id) === "aguardando").forEach(p =>
+        p.status === "aprovado"
+          ? notificar("Empréstimo aprovado", p.titulo + " está separado para você. Retire na biblioteca."
+              + (p.prevista ? " Devolver até " + brDate(p.prevista) + "." : ""))
+          : notificar("Pedido recusado", p.titulo + ". Procure a biblioteca para saber o motivo."));
+    }
+  }
+  pedidosVistos = atual;
 }
 
 /* ---------- avisos ---------- */
@@ -1097,6 +1137,10 @@ TELAS.catalogo = () => {
     <h2 style="margin-bottom:4px">Olá, ${esc((USUARIO.nome||"").split(" ")[0])}</h2>
     <div class="rot">${esc(USUARIO.escola||"")}${USUARIO.turma?" · "+esc(USUARIO.turma):""}${USUARIO.turno?" · "+esc(USUARIO.turno):""}</div>
   </div>
+  ${S.pedidos.filter(p=>p.status==="aprovado").length?`<div class="aviso ok">
+    <b>Empréstimo aprovado.</b> ${S.pedidos.filter(p=>p.status==="aprovado").length===1
+      ? "Um livro está separado para você na biblioteca." : "Há livros separados para você na biblioteca."}
+    <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="meuspedidos">Ver quais</button></div>`:""}
   ${meusAbertos.length?`<div class="aviso">Você tem ${meusAbertos.length} pedido(s) aguardando a bibliotecária.
     <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="meuspedidos">Ver meus pedidos</button></div>`:""}
   <input class="busca" id="qCatalogo" value="${esc(ctx.q||"")}" placeholder="Procurar por título, autor ou assunto">
@@ -1125,7 +1169,7 @@ DEPOIS.catalogo = () => buscaAoVivo("#qCatalogo","q");
 
 TELAS.meuspedidos = () => {
   const lista = [...S.pedidos].sort((a,b)=>b.criadoEm<a.criadoEm?-1:1);
-  const NOMES = {aguardando:"Aguardando", aprovado:"Aprovado", recusado:"Recusado"};
+  const NOMES = {aguardando:"Aguardando", aprovado:"Retire na biblioteca", recusado:"Recusado"};
   const CORES = {aguardando:"reservado", aprovado:"disponivel", recusado:"atrasado"};
   return `<div class="cartao"><h2>Meus pedidos</h2>
     ${lista.length===0?`<div class="vazio">Você ainda não pediu nenhum livro.<div style="margin-top:12px">
@@ -1134,7 +1178,8 @@ TELAS.meuspedidos = () => {
         <div style="min-width:0">
           <div class="serif" style="font-size:15px">${esc(p.titulo)}</div>
           <div class="reg">Pedido em ${brDate((p.criadoEm||"").slice(0,10))}${p.registro?" · registro "+p.registro:""}</div>
-          ${p.status==="aprovado"&&p.prevista?`<div class="meta">Devolver até ${brDate(p.prevista)}</div>`:""}
+          ${p.status==="aprovado"?`<div class="meta" style="color:var(--disp)">Disponível para retirada${
+            p.prevista?" · devolver até "+brDate(p.prevista):""}</div>`:""}
         </div>
         <div style="display:flex;gap:6px;align-items:center">
           <span class="carimbo c-${CORES[p.status]}">${NOMES[p.status]}</span>
@@ -1155,6 +1200,7 @@ TELAS.pedidos = () => {
         <div style="flex:1;min-width:0">
           <h3 class="serif">${esc(p.titulo)}</h3>
           <div class="meta">${esc(p.alunoNome)} · ${esc(p.turma||"sem turma")}${p.turno?" · "+esc(p.turno):""}</div>
+          <div class="meta">${esc(p.email||"")}</div>
           <div class="reg">Pedido em ${brDate((p.criadoEm||"").slice(0,10))} · ${disp} disponível(is)</div>
           <div class="linhab" style="margin:8px 0 0">
             <button class="chip on" data-acao="aprovarPedido" data-p="${p.id}" ${disp?"":"disabled"}>Entregar o livro</button>
@@ -1568,6 +1614,11 @@ TELAS.ajustes = () => ehAluno() ? `
     <div class="num"><span class="rot">Turno</span><span class="dir">${esc(USUARIO.turno||"")}</span></div>
     <div class="linhab" style="margin-top:12px"><button class="btn mini per" data-acao="sair">Sair da conta</button></div>
   </div>
+  <div class="cartao"><h2>Avisos</h2>
+    <p class="rot" style="margin-top:0">Receba um aviso no celular quando a bibliotecária responder ao seu pedido.</p>
+    ${podeNotificar() ? `<div class="aviso ok">Avisos ativados neste aparelho.</div>`
+      : `<button class="btn mini" data-acao="ativarAvisos">Ativar avisos</button>`}
+  </div>
   <div class="cartao"><h2>Aparência</h2>
     <div class="chips">${TEMAS.map(([v,n])=>
       `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
@@ -1583,6 +1634,12 @@ TELAS.ajustes = () => ehAluno() ? `
       ${ehDev()?`<button class="btn mini sec" data-acao="aba" data-t="escolas">Escolas</button>`:""}
       <button class="btn mini per" data-acao="sair">Sair da conta</button>
     </div>
+  </div>
+
+  <div class="cartao"><h2>Avisos</h2>
+    <p class="rot" style="margin-top:0">Receba um aviso no celular assim que um aluno pedir um livro.</p>
+    ${podeNotificar() ? `<div class="aviso ok">Avisos ativados neste aparelho.</div>`
+      : `<button class="btn mini" data-acao="ativarAvisos">Ativar avisos</button>`}
   </div>
 
   <div class="cartao"><h2>Aparência</h2>
@@ -1993,6 +2050,7 @@ const ACOES = {
   },
   tirarCapa: () => { ctx.form.capa = ""; ctx.form.capaUrl = ""; ctx.fotos = []; desenhar(); },
   tema: el => { aplicarTema(el.dataset.v); desenhar(); },
+  ativarAvisos: () => pedirNotificacao(),
   escolherLogo: () => $("#arqLogo").click(),
   tirarLogo: async () => { S.cfg.logo = ""; await salvarCfg(); desenhar(); avisar("Voltamos ao brasão Máximus."); },
   escolherPlanilha: () => $("#arqPlanilha").click(),
@@ -2270,6 +2328,9 @@ document.addEventListener("change", async e => {
     if(tela==="entrar" || tela==="pendente" || tela==="abrindo") tela = ehAluno() ? "catalogo" : "inicio";
     desenhar();
     if(ehAdmin()) carregarUsuarios();
+    if("Notification" in window && Notification.permission === "default"){
+      setTimeout(() => { try{ Notification.requestPermission(); }catch(e){} }, 2500);
+    }
   });
 
   if("serviceWorker" in navigator && location.protocol.startsWith("http")){
