@@ -512,13 +512,69 @@ async function lerCodigo(arq){
     return r.length ? r[0].rawValue : null;
   }catch(e){ return null; }
 }
-const MAPA_CAT = [[/juvenil|young adult/i,"Infantojuvenil"],[/juvenile|children|infantil|picture book/i,"Infantil"],
-[/comic|graphic novel|manga/i,"HQ/Gibis"],[/poetry|poesia/i,"Poesia"],[/biograph|memoir/i,"Biografia"],
-[/history|históri/i,"História"],[/science|ciênc|matemát|física|química|biolog/i,"Ciências"],
-[/education|pedagog|educa/i,"Educação"],[/fantasy|fantas/i,"Fantasia"],[/mystery|mistério/i,"Mistério"],
-[/thriller|suspense/i,"Suspense"],[/adventure|aventura/i,"Aventura"],[/romance/i,"Romance"],
-[/brazilian|brasileira/i,"Literatura brasileira"],[/fiction|ficção/i,"Ficção"],[/literary|literatura/i,"Literatura"]];
-const adivinharCategoria = t => (MAPA_CAT.find(([re])=>re.test(t||"")) || [,""])[1];
+const MAPA_CAT = [
+  [/gibi|quadrinh|graphic novel|comic|mang[áa]|turma da m[oô]nica|hq\b/i, "HQ/Gibis"],
+  [/poesia|poem|poetry|sonet|cordel|vers[oa]s/i, "Poesia"],
+  [/biografia|autobiografia|mem[óo]ri|biograph|memoir|di[áa]rio de/i, "Biografia"],
+  [/dicion[áa]rio|gram[áa]tica|did[áa]tic|apostila|manual escolar|ensino fundamental|ensino m[ée]dio|pedagog|alfabetiza|education|teaching|licenciatura/i, "Educação"],
+  [/hist[óo]ria do brasil|hist[óo]ria geral|hist[óo]ry|guerra mundial|idade m[ée]dia|coloni[za]|rep[úu]blica|imp[ée]rio/i, "História"],
+  [/ci[êe]ncia|biolog|f[íi]sica|qu[íi]mica|matem[áa]tica|astronom|ecolog|natureza|science|geograf/i, "Ciências"],
+  [/infantil|pr[ée]-escolar|picture book|juvenile fiction|conto de fada|fábula|f[áa]bula/i, "Infantil"],
+  [/infantojuvenil|juvenil|young adult|young readers|adolescen/i, "Infantojuvenil"],
+  [/fantasia|fantasy|magia|bruxo|dragão|dragon|feiti[cç]/i, "Fantasia"],
+  [/mist[ée]rio|mystery|detective|detetive|investiga|enigma|crime fiction/i, "Mistério"],
+  [/suspense|thriller|terror|horror|assombr/i, "Suspense"],
+  [/aventura|adventure|pirata|expedi[cç]|viagem ao/i, "Aventura"],
+  [/romance de amor|love story|romantic|paix[ãa]o|namoro/i, "Romance"],
+  [/literatura brasileira|brazilian literature|machado de assis|clarice|jorge amado|drummond|guimarães rosa|graciliano/i, "Literatura brasileira"],
+  [/literatura estrangeira|american literature|english literature|french literature|translated/i, "Literatura estrangeira"],
+  [/fic[cç][ãa]o|fiction|novel\b|conto|short stories|cr[ôo]nica/i, "Ficção"],
+  [/literatura|literary|cl[áa]ssico|classics/i, "Literatura"],
+  [/romance/i, "Romance"]
+];
+const adivinharCategoria = t => (MAPA_CAT.find(([re]) => re.test(t || "")) || [, ""])[1];
+
+/* Decide a categoria sem o usuário precisar escolher: usa os assuntos da base,
+   depois o título e a sinopse, depois as categorias do Google Books, e por
+   último a IA, quando a chave estiver configurada. */
+async function definirCategoria(o){
+  if(CATEGORIAS.includes(o.categoria)) return o.categoria;
+  const texto = [o.assuntos, o.categoria, o.titulo, o.sinopse].filter(Boolean).join(" ");
+  let c = adivinharCategoria(texto);
+  if(c) return c;
+
+  const isbn = soDigitos(o.isbn);
+  if(isbn.length >= 10){
+    try{
+      const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q=isbn:" + isbn);
+      const j = await r.json();
+      const v = j.items && j.items[0] && j.items[0].volumeInfo;
+      if(v) c = adivinharCategoria((v.categories || []).join(" ") + " " + (v.description || ""));
+      if(c) return c;
+    }catch(e){}
+  }
+  c = await categoriaPorIA(o);
+  return c || "Outros";
+}
+
+async function categoriaPorIA(o){
+  if(!S.cfg.apiKey || !o.titulo) return "";
+  try{
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {"Content-Type":"application/json", "x-api-key": S.cfg.apiKey,
+        "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true"},
+      body: JSON.stringify({model:"claude-sonnet-4-6", max_tokens:20, messages:[{role:"user", content:
+        "Classifique o livro em UMA categoria da lista abaixo e responda somente com o nome dela.\n" +
+        "Lista: " + CATEGORIAS.join(", ") + "\nTítulo: " + o.titulo +
+        "\nAutor: " + (o.autor||"") + "\nSinopse: " + (o.sinopse||"").slice(0,400)}]})
+    });
+    if(!r.ok) return "";
+    const j = await r.json();
+    const t = (j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(" ").trim();
+    return CATEGORIAS.find(c => semAcento(c) === semAcento(t)) || "";
+  }catch(e){ return ""; }
+}
 
 /* Bases de livros consultadas em cascata.
    A Câmara Brasileira do Livro vem primeiro porque cobre o catálogo nacional,
@@ -538,6 +594,7 @@ async function porBrasilAPI(isbn){
     paginas: v.page_count ? String(v.page_count) : "",
     sinopse: (v.synopsis || "").slice(0, 600),
     categoria: adivinharCategoria((v.subjects || []).join(" ") + " " + (v.synopsis || "")),
+    assuntos: (v.subjects || []).join(" "),
     capaUrl: v.cover_url || "",
     fonte: "Câmara Brasileira do Livro"
   };
@@ -582,6 +639,7 @@ async function porGoogleBooks(consulta, isbn){
     paginas: v.pageCount ? String(v.pageCount) : "",
     sinopse: (v.description || "").slice(0, 600),
     categoria: adivinharCategoria((v.categories || []).join(" ") + " " + (v.description || "")),
+    assuntos: (v.categories || []).join(" "),
     capaUrl: v.imageLinks ? (v.imageLinks.thumbnail || "").replace("http://", "https://") : "",
     fonte: "Google Books"
   };
@@ -679,6 +737,7 @@ async function buscarBiblio({isbn, texto}){
         const r = await f();
         if(r && r.titulo){
           r.capa = await baixarCapa(r.capaUrl, limpo);
+          r.categoria = await definirCategoria(r);
           return r;
         }
       }catch(e){}
@@ -688,7 +747,11 @@ async function buscarBiblio({isbn, texto}){
   if(texto){
     try{
       const r = await porGoogleBooks(encodeURIComponent(texto), "");
-      if(r && r.titulo){ r.capa = await baixarCapa(r.capaUrl, soDigitos(r.isbn)); return r; }
+      if(r && r.titulo){
+        r.capa = await baixarCapa(r.capaUrl, soDigitos(r.isbn));
+        r.categoria = await definirCategoria(r);
+        return r;
+      }
     }catch(e){}
   }
   return null;
@@ -1183,6 +1246,11 @@ TELAS.alunos = () => {
   const lista = S.alunos.filter(a=>!q || semAcento(a.nome).includes(q) || semAcento(a.turma).includes(q) || (a.matricula||"").includes(q))
     .sort((a,b)=>semAcento(a.nome)<semAcento(b.nome)?-1:1);
   return `<button class="btn" data-acao="novoAluno">Cadastrar aluno</button>
+    <input type="file" accept=".xlsx,.xls,.csv" id="arqAlunos" hidden>
+    <div class="linhab" style="margin-top:10px">
+      <button class="btn mini sec" data-acao="importarAlunos">📄 Importar lista de alunos</button>
+      <button class="btn mini sec" data-acao="modeloAlunos">Baixar modelo</button>
+    </div>
     <input class="busca" style="margin-top:12px" id="qAlunos" value="${esc(ctx.q||"")}" placeholder="Pesquisar por nome, turma ou matrícula">
     <div class="cartao" style="margin-top:12px">${lista.length===0?`<div class="vazio">Nenhum aluno cadastrado ainda.</div>`
       : lista.map(a=>{
@@ -1506,7 +1574,7 @@ const ACOES = {
         const r = await identificarPorFoto(ctx.fotos.map(f=>base64(f.grande)), txt);
         const f = ctx.form;
         ["titulo","autor","editora","ano","isbn","edicao","paginas","sinopse"].forEach(k=>{ if(r[k]) f[k]=String(r[k]); });
-        if(CATEGORIAS.includes(r.categoria)) f.categoria = r.categoria;
+        f.categoria = CATEGORIAS.includes(r.categoria) ? r.categoria : await definirCategoria(f);
         if(r.isbn){ const d = await buscarBiblio({isbn:r.isbn}); if(d) Object.assign(f, d, {sinopse: f.sinopse||d.sinopse}); }
         achou = !!f.titulo;
       }catch(e){ desenhar(); avisar(e.message, "erro"); return; }
@@ -1620,6 +1688,11 @@ const ACOES = {
 
   /* alunos */
   novoAluno: () => { ctx.novo = {id:uid(), nome:"", turma:"", matricula:"", telefone:""}; desenhar(); },
+  importarAlunos: () => $("#arqAlunos").click(),
+  modeloAlunos: () => exportarPlanilha([
+    {Nome:"Ana Beatriz Souza", Turma:"5º Ano H", Matricula:"2026001", Telefone:"(66) 99999-0000"},
+    {Nome:"Carlos Eduardo Lima", Turma:"5º Ano H", Matricula:"2026002", Telefone:""}
+  ], "modelo-alunos"),
   cancelarAluno: () => { ctx.novo = null; desenhar(); },
   salvarAluno: async () => {
     if(!ctx.novo.nome.trim()){ avisar("Informe o nome do aluno.", "erro"); return; }
@@ -1781,6 +1854,32 @@ document.addEventListener("change", async e => {
       }
       avisar("Foto adicionada. Toque em Buscar dados do livro.");
     }catch(err){ avisar(err.message, "erro"); }
+    t.value = "";
+  }
+
+  if(t.id==="arqAlunos" && t.files[0]){
+    try{
+      if(!window.XLSX) throw new Error("A leitura de planilhas precisa de internet.");
+      const wb = XLSX.read(await t.files[0].arrayBuffer());
+      const linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      let novos = 0, repetidos = 0;
+      for(const l of linhas){
+        const pega = (...ks) => { for(const k of ks){ const c = Object.keys(l).find(x=>semAcento(x)===semAcento(k));
+          if(c && l[c]!==undefined) return String(l[c]).trim(); } return ""; };
+        const nome = pega("Nome","Aluno","Estudante");
+        if(!nome) continue;
+        const matricula = pega("Matricula","Matrícula","RA","Registro");
+        const turma = pega("Turma","Serie","Série","Ano");
+        const jaTem = S.alunos.some(a => (matricula && a.matricula === matricula)
+          || (semAcento(a.nome) === semAcento(nome) && semAcento(a.turma||"") === semAcento(turma)));
+        if(jaTem){ repetidos++; continue; }
+        await guardar("alunos", {id:uid(), nome, turma, matricula,
+          telefone: pega("Telefone","Fone","Contato","Responsavel","Responsável")});
+        novos++;
+      }
+      avisar(novos ? novos + " aluno(s) importado(s)" + (repetidos ? ", " + repetidos + " já estavam cadastrados." : ".")
+        : "Nenhum aluno novo encontrado na planilha.", novos ? "ok" : "erro");
+    }catch(err){ avisar(err.message || "Não consegui ler a planilha.", "erro"); }
     t.value = "";
   }
 
