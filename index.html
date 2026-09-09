@@ -199,6 +199,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   </div>
   <div class="barra">
     <button class="btn sec" data-acao="fecharScanner">Fechar</button>
+    <button class="btn sec" id="btnLanterna" data-acao="lanterna" style="display:none">🔦 Luz</button>
     <button class="btn" id="btnManual" data-acao="capturarAgora" style="display:none">Tirar agora</button>
   </div>
 </div>
@@ -652,7 +653,7 @@ function totais(){
 async function lerCodigo(arq){
   if(!("BarcodeDetector" in window)) return null;
   try{
-    const d = new BarcodeDetector({formats:["ean_13","ean_8","code_39","code_128","qr_code","upc_a"]});
+    const d = new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]});
     const bmp = arq instanceof Blob ? await createImageBitmap(arq) : arq;
     const r = await d.detect(bmp);
     return r.length ? r[0].rawValue : null;
@@ -1007,11 +1008,30 @@ const C39 = {"0":"101001101101","1":"110100101011","2":"101100101011","3":"11011
 "N":"101011010011","O":"110101101001","P":"101101101001","Q":"101010110011","R":"110101011001","S":"101101011001",
 "T":"101011011001","U":"110010101011","V":"100110101011","W":"110011010101","X":"100101101011","Y":"110010110101",
 "Z":"100110110101","-":"100101011011",".":"110010101101"," ":"100110101101","*":"100101101101"};
+/* QR do registro: lido por qualquer câmera, aguenta impressão ruim e papel amassado. */
+function svgQR(valor, tam=120){
+  try{
+    if(typeof qrcode !== "function") return "";
+    const q = qrcode(0, "M");
+    q.addData(String(valor));
+    q.make();
+    const n = q.getModuleCount(), m = 2, total = n + m*2;
+    let r = `<svg viewBox="0 0 ${total} ${total}" width="${tam}" height="${tam}" shape-rendering="crispEdges">
+      <rect width="${total}" height="${total}" fill="#fff"/>`;
+    for(let y=0; y<n; y++) for(let x=0; x<n; x++)
+      if(q.isDark(y,x)) r += `<rect x="${x+m}" y="${y+m}" width="1" height="1" fill="#000"/>`;
+    return r + "</svg>";
+  }catch(e){ return ""; }
+}
+
 function svgBarras(valor, altura=36){
   const seq = ("*"+String(valor).toUpperCase()+"*").split("").map(c=>C39[c]||C39["-"]).join("0");
-  const w = 1.6; let x = 0, r = "";
-  for(const b of seq){ if(b==="1") r += `<rect x="${x}" y="0" width="${w}" height="${altura}" fill="#111"/>`; x += w; }
-  return `<svg viewBox="0 0 ${x} ${altura}" width="190" height="${altura}" preserveAspectRatio="none">${r}</svg>`;
+  const w = 2, quieta = 12*w;
+  let x = quieta, r = "";
+  for(const b of seq){ if(b==="1") r += `<rect x="${x}" y="4" width="${w}" height="${altura}" fill="#000"/>`; x += w; }
+  const total = x + quieta;
+  return `<svg viewBox="0 0 ${total} ${altura+8}" width="200" height="${altura+8}" shape-rendering="crispEdges">
+    <rect width="${total}" height="${altura+8}" fill="#fff"/>${r}</svg>`;
 }
 
 /* ================================================================
@@ -1506,6 +1526,8 @@ TELAS.etiqueta = () => {
   if(!regs.length) return `<div class="vazio">Nenhuma etiqueta para gerar.</div>`;
   return `
   <p class="rot naoimprime">${regs.length} etiqueta(s). Imprima em papel adesivo A4 e recorte pelo tracejado.</p>
+  ${typeof qrcode !== "function" ? `<div class="aviso erro naoimprime">O gerador de QR ainda não carregou.
+    Confira a internet e recarregue a página antes de imprimir.</div>` : ""}
   <div class="linhab naoimprime">
     <button class="btn mini" data-acao="imprimir">Imprimir etiquetas</button>
     <button class="btn mini sec" data-acao="voltar">Voltar</button>
@@ -1520,9 +1542,9 @@ TELAS.etiqueta = () => {
       <div class="rg">${r}</div>
       <div class="cat">${esc((o.titulo||"").slice(0,34))}</div>
       <div class="cat" style="font-weight:600">${esc(o.categoria||"Sem categoria")}${local?" · "+esc(local):""}</div>
-      ${svgBarras(r)}
-      <div style="font-size:9px;color:#666;margin-top:2px">Máximus Biblioteca Escolar</div>
-      <div class="reg">${r}</div></div>`;
+      ${svgQR(r, 118) || svgBarras(r)}
+      <div class="reg" style="font-size:13px;letter-spacing:.16em;margin-top:3px">${r}</div>
+      <div style="font-size:8.5px;color:#666">Máximus Biblioteca Escolar</div></div>`;
   }).join("")}</div>
   <p class="rot naoimprime">O código impresso é lido pela câmera do próprio aplicativo, no botão Escanear etiqueta.</p>`;
 };
@@ -1873,27 +1895,71 @@ TELAS.usuarios = () => {
 /* ================================================================
    Scanner
    ================================================================ */
-let stream = null, lendo = false, aoLer = null;
+let stream = null, lendo = false, aoLer = null, faixa = null;
+
+/* Câmera preparada para código de barras: resolução alta, foco contínuo e um
+   pouco de zoom. Sem isso as barras finas do EAN-13 da contracapa não fecham. */
+async function ligarCamera(){
+  const s = await navigator.mediaDevices.getUserMedia({
+    video: {facingMode: {ideal: "environment"}, width: {ideal: 1920}, height: {ideal: 1080}}
+  });
+  try{
+    const t = s.getVideoTracks()[0];
+    const cap = t.getCapabilities ? t.getCapabilities() : {};
+    const adv = [];
+    if(cap.focusMode && cap.focusMode.includes("continuous")) adv.push({focusMode: "continuous"});
+    if(cap.zoom && cap.zoom.max >= 1.8) adv.push({zoom: Math.min(1.8, cap.zoom.max)});
+    if(adv.length) await t.applyConstraints({advanced: adv});
+    faixa = (cap.torch) ? t : null;
+  }catch(e){ faixa = null; }
+  return s;
+}
+
+/* procura o código no quadro inteiro e depois num recorte central ampliado,
+   que é onde o código costuma estar e onde a ampliação ajuda o decodificador */
+const recorte = document.createElement("canvas");
+async function procurarCodigo(det, v){
+  try{ const r = await det.detect(v); if(r.length) return r[0].rawValue; }catch(e){}
+  const w = v.videoWidth, hh = v.videoHeight;
+  if(!w) return null;
+  const cw = Math.round(w*0.8), ch = Math.round(hh*0.5);
+  recorte.width = Math.round(cw*1.5); recorte.height = Math.round(ch*1.5);
+  try{
+    recorte.getContext("2d").drawImage(v, Math.round((w-cw)/2), Math.round((hh-ch)/2), cw, ch,
+      0, 0, recorte.width, recorte.height);
+    const r = await det.detect(recorte);
+    if(r.length) return r[0].rawValue;
+  }catch(e){}
+  return null;
+}
 async function abrirScanner(cb){
-  if(!("BarcodeDetector" in window)){ avisar("Este navegador não lê códigos pela câmera. Use o Chrome no Android ou digite o número.", "erro"); return; }
+  if(!("BarcodeDetector" in window)){
+    avisar("Este navegador não lê códigos pela câmera. Abra pelo Chrome no Android, ou digite o número do registro na busca.", "erro");
+    return;
+  }
   aoLer = cb;
-  try{ stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}); }
+  try{ stream = await ligarCamera(); }
   catch(e){ avisar("Não consegui abrir a câmera. Verifique a permissão do navegador.", "erro"); return; }
   const v = $("#video"); v.srcObject = stream; await v.play();
   $("#scanner").style.display = "flex"; lendo = true;
-  const det = new BarcodeDetector({formats:["ean_13","ean_8","code_39","code_128","qr_code","upc_a"]});
+  const det = new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]});
+  const dica = $("#scanDica");
+  if(dica) dica.textContent = "Aproxime até o código preencher a faixa";
+  $("#btnLanterna").style.display = faixa ? "inline-flex" : "none";
+  let voltas = 0;
   const laco = async () => {
     if(!lendo) return;
-    try{ const r = await det.detect(v); if(r.length){ const val=r[0].rawValue; fecharScanner(); if(aoLer) aoLer(val); return; } }catch(e){}
-    requestAnimationFrame(laco);
+    const val = await procurarCodigo(det, v);
+    if(val){ fecharScanner(); if(aoLer) aoLer(val); return; }
+    if(++voltas === 60 && dica) dica.textContent = "Se não ler, afaste um pouco e limpe a lente";
+    setTimeout(() => requestAnimationFrame(laco), 90);
   };
   requestAnimationFrame(laco);
 }
 /* Câmera com disparo automático: assim que a imagem fica parada e nítida,
    ele fotografa sozinho. Se aparecer código de barras antes, usa o código. */
 async function abrirCaptura(aoFoto, aoCodigo){
-  try{ stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",
-    width:{ideal:1920}, height:{ideal:1080}}}); }
+  try{ stream = await ligarCamera(); }
   catch(e){ avisar("Não consegui abrir a câmera. Verifique a permissão do navegador.", "erro"); return; }
 
   const v = $("#video");
@@ -1905,7 +1971,7 @@ async function abrirCaptura(aoFoto, aoCodigo){
 
   const dica = $("#scanDica");
   const det = ("BarcodeDetector" in window)
-    ? new BarcodeDetector({formats:["ean_13","ean_8","code_39","code_128","upc_a"]}) : null;
+    ? new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]}) : null;
 
   const p = document.createElement("canvas");
   p.width = 160; p.height = 120;
@@ -1918,11 +1984,9 @@ async function abrirCaptura(aoFoto, aoCodigo){
     if(!lendo) return;
     quadro++;
 
-    if(det && quadro % 3 === 0){
-      try{
-        const r = await det.detect(v);
-        if(r.length){ const val = r[0].rawValue; fecharScanner(); aoCodigo(val); return; }
-      }catch(e){}
+    if(det && quadro % 2 === 0){
+      const val = await procurarCodigo(det, v);
+      if(val){ fecharScanner(); aoCodigo(val); return; }
     }
 
     pc.drawImage(v, 0, 0, 160, 120);
@@ -1977,7 +2041,10 @@ function tirarFoto(v){
 
 function fecharScanner(){
   lendo = false;
+  try{ if(faixa) faixa.applyConstraints({advanced:[{torch:false}]}); }catch(e){}
+  faixa = null;
   $("#scanner").style.display = "none";
+  const bl = $("#btnLanterna"); if(bl) bl.style.display = "none";
   const m = $("#mira"); if(m) m.className = "mira";
   const b = $("#btnManual"); if(b) b.style.display = "none";
   if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
@@ -2055,6 +2122,13 @@ const ACOES = {
   /* cadastro */
   fotoCapa: () => $("#arqCapa").click(),
   capturarAgora: () => capturarAgora(),
+  lanterna: async () => {
+    if(!faixa) return;
+    try{
+      const ligado = faixa.getSettings().torch;
+      await faixa.applyConstraints({advanced: [{torch: !ligado}]});
+    }catch(e){ avisar("Este aparelho não deixa ligar a luz por aqui.", "erro"); }
+  },
   capturaAuto: () => {
     if(tela !== "cadastro") ir("cadastro");
     abrirCaptura(
@@ -2611,8 +2685,12 @@ document.addEventListener("change", async e => {
 });
 
 /* planilhas: carrega da internet e fica em cache */
-(function(){ const s=document.createElement("script");
-  s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.async=true; document.head.appendChild(s); })();
+(function(){
+  [["https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
+   ["https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"]].forEach(([src]) => {
+    const s = document.createElement("script"); s.src = src; s.async = true; document.head.appendChild(s);
+  });
+})();
 
 /* ================================================================
    Início
