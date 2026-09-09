@@ -598,6 +598,21 @@ const obraDoRegistro = r => S.obras.find(o => o.exemplares.some(x => x.registro=
    aceita todas, e também o ISBN impresso na contracapa. */
 const limparCodigo = v => String(v||"").replace(/[*\s\-\.]/g, "").toUpperCase();
 
+/* ISBN-10 e ISBN-13 do mesmo livro têm dígitos verificadores diferentes, e o
+   código de barras da contracapa às vezes traz um deles. O miolo, porém, é o
+   mesmo nos dois: são esses nove dígitos que servem de chave. */
+function chaveIsbn(v){
+  const d = soDigitos(v);
+  if(d.length === 13 && (d.startsWith("978") || d.startsWith("979"))) return d.slice(3, 12);
+  if(d.length === 10) return d.slice(0, 9);
+  if(d.length === 12) return d.slice(3);
+  return d.length >= 8 ? d : "";
+}
+const mesmoIsbn = (a, b) => {
+  const x = chaveIsbn(a), y = chaveIsbn(b);
+  return !!x && x === y;
+};
+
 function acharExemplar(valor){
   const v = limparCodigo(valor);
   const dig = soDigitos(v);
@@ -610,8 +625,8 @@ function acharExemplar(valor){
     }
   }
   if(dig.length >= 8){
-    const o = S.obras.find(x => soDigitos(x.isbn) === dig
-      || (x.codigos || []).some(c => soDigitos(c) === dig));
+    const o = S.obras.find(x => mesmoIsbn(x.isbn, dig)
+      || (x.codigos || []).some(c => mesmoIsbn(c, dig) || soDigitos(c) === dig));
     if(o){
       const livre = o.exemplares.find(x => statusDe(x.registro) === "disponivel") || o.exemplares[0];
       if(livre) return {obra:o, registro:livre.registro, porIsbn:true};
@@ -1051,7 +1066,12 @@ const ABAS_ALUNO = [["catalogo","📚","Catálogo"],["meuspedidos","📖","Meus 
 const abas = () => ehAluno() ? ABAS_ALUNO : ABAS_EQUIPE;
 
 const formVazio = () => ({titulo:"",autor:"",editora:"",ano:"",isbn:"",edicao:"",categoria:"",paginas:"",
-  sinopse:"",capa:"",capaUrl:"",estante:"",prateleira:"",secao:""});
+  sinopse:"",capa:"",capaUrl:"",estante:"",prateleira:"",secao:"",codigos:[]});
+const anotarCodigo = cod => {
+  const c = limparCodigo(cod);
+  if(!c || !ctx.form) return;
+  ctx.form.codigos = [...new Set([...(ctx.form.codigos || []), c])];
+};
 
 function ir(t, dados){
   tela = t;
@@ -2152,12 +2172,14 @@ const ACOES = {
         avisar("Código lido. Buscando...");
         const d = await buscarBiblio({isbn: codigo});
         if(d) Object.assign(ctx.form, d); else ctx.form.isbn = codigo;
+        anotarCodigo(codigo);
         desenhar();
         avisar(d ? "Encontrado em " + d.fonte + ". Confira e salve." : "Código lido. Complete os dados.", d ? "ok" : "erro");
       }
     );
   },
   scanISBN: () => abrirScanner(async val => {
+    anotarCodigo(val);
     ctx.form.isbn = val;
     avisar("Código lido. Buscando os dados...");
     const d = await buscarBiblio({isbn:val});
@@ -2227,7 +2249,8 @@ const ACOES = {
     if(!f.titulo.trim()){ avisar("Informe ao menos o título.", "erro"); return; }
     const exemplares = [];
     for(let i=0;i<ctx.qtd;i++) exemplares.push({registro: reg(S.cfg.proxReg+i)});
-    const nova = Object.assign({}, f, {id:uid(), criadoEm:hoje(), criadoPor:USUARIO.uid, exemplares,
+    const codigos = [...new Set([...(f.codigos || []), limparCodigo(f.isbn)].filter(Boolean))];
+    const nova = Object.assign({}, f, {id:uid(), criadoEm:hoje(), criadoPor:USUARIO.uid, exemplares, codigos,
       capa: ctx.fotos[0] ? ctx.fotos[0].thumb : f.capa});
     const de = reg(S.cfg.proxReg), ate = reg(S.cfg.proxReg+ctx.qtd-1);
     try{
@@ -2268,6 +2291,7 @@ const ACOES = {
     avisar("Buscando os dados de " + cod + "...");
     const d = await buscarBiblio({isbn: cod});
     if(d) Object.assign(ctx.form, d); else ctx.form.isbn = cod;
+    anotarCodigo(cod);
     desenhar();
     avisar(d ? "Encontrado em " + d.fonte + ". Confira e salve." : "Não achei nas bases. Preencha à mão.", d?"ok":"erro");
   },
@@ -2276,6 +2300,7 @@ const ACOES = {
   salvarEdicao: async () => {
     const o = Object.assign({}, obra(ctx.id));
     document.querySelectorAll("[data-edit]").forEach(i => o[i.dataset.edit] = i.value);
+    o.codigos = [...new Set([...(o.codigos || []), limparCodigo(o.isbn)].filter(Boolean))];
     await guardar("obras", o);
     gravarCatalogo(o);
     ctx.editando = false; desenhar(); avisar("Ficha atualizada.");
@@ -2602,6 +2627,7 @@ document.addEventListener("change", async e => {
       desenhar();
       if(cod){
         avisar("Código de barras encontrado na foto. Buscando...");
+        anotarCodigo(cod);
         const d = await buscarBiblio({isbn:cod});
         if(d){ Object.assign(ctx.form, d); desenhar(); avisar("Dados encontrados. Confira antes de salvar."); t.value=""; return; }
       }
