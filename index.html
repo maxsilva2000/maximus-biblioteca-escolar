@@ -1328,14 +1328,22 @@ TELAS.cadastro = () => {
     <button class="btn sec mini" style="margin-top:10px" data-acao="nenhumResultado">Nenhum destes, preencher à mão</button>
   </div>` : ""}
   <div class="cartao"><h2>2. Confira e corrija</h2>
-    ${(f.capa || f.capaUrl) ? `<div style="text-align:center;margin-bottom:12px">
-      <img src="${f.capa || f.capaUrl}" alt="Capa do livro"
-        style="height:150px;border-radius:6px;border:1px solid var(--forte)">
-      <div class="linhab" style="justify-content:center;margin:8px 0 0">
-        <button class="chip" data-acao="tirarCapa">Remover capa</button>
-        <button class="chip" data-acao="fotoCapa">Fotografar a minha</button>
-      </div></div>` : `<div class="aviso">Se o livro não estiver em nenhuma base, preencha os campos aqui e salve
-      do mesmo jeito. O registro e a etiqueta são gerados igual.</div>`}
+    <div style="text-align:center;margin-bottom:14px">
+      ${(f.capa || f.capaUrl)
+        ? `<img src="${f.capa || f.capaUrl}" alt="Capa do livro"
+             style="height:160px;border-radius:6px;border:1px solid var(--forte)">
+           <div class="linhab" style="justify-content:center;margin:8px 0 0">
+             <button class="chip" data-acao="fotoDaCapa">Trocar por uma foto minha</button>
+             <button class="chip" data-acao="tirarCapa">Remover</button>
+           </div>`
+        : `<div style="width:118px;height:168px;margin:0 auto;border:1.5px dashed var(--forte);border-radius:8px;
+             display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--soft)">📕</div>
+           <p class="rot" style="margin:8px 0 0">Nenhuma base tem a capa deste livro.</p>
+           <div class="linhab" style="justify-content:center;margin:8px 0 0">
+             <button class="btn mini" data-acao="fotoDaCapa">📸 Fotografar a capa</button>
+             <button class="btn mini sec" data-acao="fotoCapa">Escolher imagem</button>
+           </div>`}
+    </div>
     ${campo("Título","titulo")}${campo("Autor","autor")}
     <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
     <div class="dupla">${campo("ISBN","isbn")}${campo("Edição","edicao")}</div>
@@ -2079,6 +2087,24 @@ const ACOES = {
   /* cadastro */
   fotoCapa: () => $("#arqCapa").click(),
   capturarAgora: () => capturarAgora(),
+  fotoDaCapa: () => {
+    abrirCaptura(
+      async foto => {
+        const thumb = await reduzir(await (await fetch(foto)).blob(), 320, 0.7);
+        ctx.form.capa = thumb;
+        ctx.form.capaUrl = "";
+        ctx.fotos = [{grande: foto, thumb}];
+        desenhar();
+        avisar("Capa fotografada.");
+      },
+      async codigo => {
+        if(!ctx.form.isbn) ctx.form.isbn = codigo;
+        anotarCodigo(codigo);
+        desenhar();
+        avisar("Li o código " + limparCodigo(codigo) + ". Para a capa, mire só na capa do livro.");
+      }
+    );
+  },
   lanterna: async () => {
     if(!faixa) return;
     try{
@@ -2561,6 +2587,13 @@ document.addEventListener("change", async e => {
       ctx.fotos = [{grande, thumb}];
       if(!ctx.form.capa) ctx.form.capa = thumb;
       const cod = await lerCodigo(f);
+      if(ctx.form.titulo){
+        ctx.form.capa = thumb; ctx.form.capaUrl = "";
+        desenhar();
+        avisar("Capa atualizada.");
+        t.value = "";
+        return;
+      }
       desenhar();
       if(cod){
         avisar("Código de barras encontrado na foto. Buscando...");
