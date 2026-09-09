@@ -17,18 +17,27 @@
   --texto:#EDEAE3; --soft:#9A9891; --linha:#26292F; --forte:#3A3E45;
   --disp:#79BF9B; --empr:#87ADE0; --atra:#E0705F; --res:#D9B26A;
   --ouroTopo:#E7CE84; --softTopo:#9A9891;
+  --avisoFundo:rgba(201,162,39,.10); --avisoBorda:rgba(201,162,39,.45); --avisoTexto:#EFE7D2;
+  --erroFundo:rgba(224,112,95,.12); --erroBorda:rgba(224,112,95,.55); --erroTexto:#F4C4BB;
+  --okFundo:rgba(121,191,155,.12); --okBorda:rgba(121,191,155,.5); --okTexto:#C6E7D5;
 }
 :root[data-tema="claro"]{
   --fundo:#F2F0E9; --card:#FFFFFF; --card2:#F7F5EE; --topo:#0F1113;
   --ouro:#9A7A1A; --ouro2:#7A5F12; --prata:#6B7280;
   --texto:#1A1C18; --soft:#5E625B; --linha:#E2DECF; --forte:#C4BFAC;
   --disp:#2E7D52; --empr:#2C4A7C; --atra:#A63328; --res:#8A6A16;
+  --avisoFundo:#FBF3DC; --avisoBorda:#D9C48A; --avisoTexto:#4A3B12;
+  --erroFundo:#FBE9E6; --erroBorda:#D9A79E; --erroTexto:#7E2A20;
+  --okFundo:#E7F3EC; --okBorda:#A8CBB7; --okTexto:#1D5638;
 }
 :root[data-tema="azul"]{
   --fundo:#0A1220; --card:#111C2E; --card2:#182640; --topo:#060C16;
   --ouro:#C9A227; --ouro2:#E7CE84; --prata:#BFC4CC;
   --texto:#E9EEF7; --soft:#8FA0B8; --linha:#1E2E48; --forte:#2E4160;
   --disp:#6FC49B; --empr:#7FB0EC; --atra:#E0705F; --res:#D9B26A;
+  --avisoFundo:rgba(201,162,39,.12); --avisoBorda:rgba(201,162,39,.5); --avisoTexto:#F0E7D2;
+  --erroFundo:rgba(224,112,95,.14); --erroBorda:rgba(224,112,95,.55); --erroTexto:#F4C4BB;
+  --okFundo:rgba(111,196,155,.14); --okBorda:rgba(111,196,155,.5); --okTexto:#C8EAD8;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -122,10 +131,10 @@ nav button.on{color:var(--ouroTopo);font-weight:700}
 .chip.on{background:linear-gradient(180deg,#E7CE84,#C9A227);color:#14150F;border-color:var(--ouro);font-weight:600}
 
 .vazio{text-align:center;color:var(--soft);font-size:14px;padding:32px 16px;line-height:1.55}
-.aviso{background:rgba(201,162,39,.09);border:1px solid rgba(201,162,39,.4);border-radius:9px;padding:11px 13px;
- font-size:13.5px;line-height:1.5;margin-bottom:12px;color:#E9E3D2}
-.erro{background:rgba(224,112,95,.1);border-color:rgba(224,112,95,.5);color:#F0BDB4}
-.ok{background:rgba(121,191,155,.1);border-color:rgba(121,191,155,.45);color:#BFE3CF}
+.aviso{background:var(--avisoFundo);border:1px solid var(--avisoBorda);border-radius:9px;padding:11px 13px;
+ font-size:13.5px;line-height:1.5;margin-bottom:12px;color:var(--avisoTexto)}
+.erro{background:var(--erroFundo);border-color:var(--erroBorda);color:var(--erroTexto)}
+.ok{background:var(--okFundo);border-color:var(--okBorda);color:var(--okTexto)}
 
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--linha);white-space:nowrap}
@@ -742,6 +751,12 @@ async function categoriaPorIA(o){
    A Câmara Brasileira do Livro vem primeiro porque cobre o catálogo nacional,
    que é onde o Google Books costuma falhar. */
 
+/* nenhuma consulta pode travar a tela: cada uma tem tempo limite próprio */
+const comTempo = (p, ms) => Promise.race([
+  Promise.resolve(p).catch(() => null),
+  new Promise(r => setTimeout(() => r(null), ms))
+]);
+
 async function porBrasilAPI(isbn){
   const r = await fetch("https://brasilapi.com.br/api/isbn/v1/" + isbn);
   if(!r.ok) return null;
@@ -866,37 +881,31 @@ async function resolverCapa(o){
 async function buscarBiblio({isbn, texto}){
   const limpo = soDigitos(isbn);
   if(limpo.length >= 10){
-    const doCatalogo = await lerCatalogo(limpo);
+    const doCatalogo = await comTempo(lerCatalogo(limpo), 4000);
     if(doCatalogo) return doCatalogo;
-    const fontes = [
-      () => porBrasilAPI(limpo),
-      () => porMercadoEditorial(limpo),
-      () => porGoogleBooks("isbn:" + limpo, limpo),
-      () => porGoogleBooks(limpo, limpo),
-      () => porOpenLibrary(limpo),
-      () => porOpenLibrarySearch(limpo)
-    ];
-    for(const f of fontes){
-      try{
-        const r = await f();
-        if(r && r.titulo){
-          Object.assign(r, await resolverCapa(r));
-          r.categoria = await definirCategoria(r);
-          return r;
-        }
-      }catch(e){}
-    }
-    return null;
+
+    /* todas as bases são consultadas ao mesmo tempo; fica a primeira da ordem
+       de preferência que tiver respondido */
+    const respostas = await Promise.all([
+      comTempo(porBrasilAPI(limpo), 8000),
+      comTempo(porMercadoEditorial(limpo), 8000),
+      comTempo(porGoogleBooks("isbn:" + limpo, limpo), 8000),
+      comTempo(porOpenLibrarySearch(limpo), 8000),
+      comTempo(porOpenLibrary(limpo), 8000)
+    ]);
+    const r = respostas.find(x => x && x.titulo);
+    if(!r) return null;
+    Object.assign(r, (await comTempo(resolverCapa(r), 7000)) || {});
+    r.categoria = (await comTempo(definirCategoria(r), 6000)) || r.categoria || "Outros";
+    return r;
   }
   if(texto){
-    try{
-      const r = await porGoogleBooks(encodeURIComponent(texto), "");
-      if(r && r.titulo){
-        Object.assign(r, await resolverCapa(r));
-        r.categoria = await definirCategoria(r);
-        return r;
-      }
-    }catch(e){}
+    const r = await comTempo(porGoogleBooks(encodeURIComponent(texto), ""), 8000);
+    if(r && r.titulo){
+      Object.assign(r, (await comTempo(resolverCapa(r), 7000)) || {});
+      r.categoria = (await comTempo(definirCategoria(r), 6000)) || r.categoria || "Outros";
+      return r;
+    }
   }
   return null;
 }
@@ -2154,7 +2163,7 @@ const ACOES = {
   buscarDados: async () => {
     const txt = ($("#buscaLivro").value||"").trim(), s = $("#statusBusca"), temFoto = ctx.fotos.length>0;
     if(!txt && !temFoto){ avisar("Escaneie o código, tire uma foto da capa ou digite o título.", "erro"); return; }
-    s.innerHTML = `<div class="rot" style="padding-top:12px"><span class="giro"></span>Procurando...</div>`;
+    s.innerHTML = `<div class="aviso" style="margin-top:12px"><span class="giro"></span>Procurando nas bases de livros...</div>`;
 
     /* ISBN digitado: preenche direto */
     if(soDigitos(txt).length >= 10){
