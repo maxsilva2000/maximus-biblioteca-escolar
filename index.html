@@ -591,6 +591,33 @@ function avisar(txt, tipo="ok"){
 
 /* ---------- derivados ---------- */
 const obraDoRegistro = r => S.obras.find(o => o.exemplares.some(x => x.registro===r));
+
+/* O leitor devolve o código de formas diferentes conforme o aparelho: com os
+   asteriscos do Code 39, com espaços, ou sem os zeros da frente. Aqui a gente
+   aceita todas, e também o ISBN impresso na contracapa. */
+const limparCodigo = v => String(v||"").replace(/[*\s\-\.]/g, "").toUpperCase();
+
+function acharExemplar(valor){
+  const v = limparCodigo(valor);
+  const dig = soDigitos(v);
+  for(const o of S.obras){
+    for(const x of o.exemplares){
+      const r = limparCodigo(x.registro);
+      if(r === v) return {obra:o, registro:x.registro};
+      if(dig && soDigitos(r) === dig) return {obra:o, registro:x.registro};
+      if(dig && Number(soDigitos(r)) === Number(dig)) return {obra:o, registro:x.registro};
+    }
+  }
+  if(dig.length >= 8){
+    const o = S.obras.find(x => soDigitos(x.isbn) === dig
+      || (x.codigos || []).some(c => soDigitos(c) === dig));
+    if(o){
+      const livre = o.exemplares.find(x => statusDe(x.registro) === "disponivel") || o.exemplares[0];
+      if(livre) return {obra:o, registro:livre.registro, porIsbn:true};
+    }
+  }
+  return null;
+}
 const alunoPorId = i => S.alunos.find(a => a.id===i);
 const obra = i => S.obras.find(o => o.id===i);
 const emprestimoAberto = r => S.emprestimos.find(e => e.registro===r && !e.devolucao);
@@ -994,9 +1021,10 @@ const TITULOS = {inicio:()=>S.cfg.escola||"Máximus", cadastro:()=>"Cadastrar li
   obra:()=>"Ficha do livro", emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos",
   aluno:()=>"Ficha do aluno", relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiquetas",
   usuarios:()=>"Usuários", escolas:()=>"Escolas", abrindo:()=>"Máximus", entrar:()=>"Máximus",
+  vincular:()=>"Vincular código",
   catalogo:()=>S.cfg.escola||"Catálogo", meuspedidos:()=>"Meus pedidos", pedidos:()=>"Pedidos dos alunos", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
 const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos",
-  etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes", pedidos:"emprestimos"};
+  etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes", pedidos:"emprestimos", vincular:"emprestimos"};
 const ABAS_EQUIPE = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
   ["emprestimos","📖","Empréstimos"],["alunos","🎓","Alunos"],["relatorios","📊","Relatórios"]];
 const ABAS_ALUNO = [["catalogo","📚","Catálogo"],["meuspedidos","📖","Meus pedidos"],["ajustes","⚙️","Conta"]];
@@ -1170,6 +1198,29 @@ TELAS.inicio = () => {
   ${cats.length?`<div class="cartao"><h2>Categorias com mais livros</h2>${cats.map(([c,n])=>
     `<div class="num"><span class="rot">${esc(c)}</span><b>${n}</b></div>`).join("")}</div>`:""}`;
 };
+
+TELAS.vincular = () => {
+  const q = semAcento(ctx.q||"");
+  const lista = S.obras.filter(o => !q || [o.titulo,o.autor,o.isbn].some(c=>semAcento(c).includes(q)))
+    .sort((a,b)=>semAcento(a.titulo)<semAcento(b.titulo)?-1:1).slice(0,40);
+  return `<div class="aviso">Li o código <b>${esc(ctx.codigo||"")}</b>, que não está neste acervo.
+    Se ele é de um exemplar que você já cadastrou, escolha o livro abaixo: da próxima vez ele será
+    reconhecido na hora.</div>
+  <input class="busca" id="qVincular" value="${esc(ctx.q||"")}" placeholder="Procurar o livro no acervo">
+  <div class="cartao">${lista.length===0?`<div class="vazio">Nada encontrado.</div>`:lista.map(o=>`
+    <button class="item" data-acao="confirmarVinculo" data-id="${o.id}">
+      ${o.capa||o.capaUrl?`<img class="capa" src="${o.capa||o.capaUrl}" alt="">`:`<span class="capa">📕</span>`}
+      <span style="flex:1;min-width:0">
+        <span class="serif" style="font-size:15.5px;display:block">${esc(o.titulo)}</span>
+        <span class="meta" style="display:block">${esc(o.autor||"")}</span>
+        <span class="reg">${o.exemplares.map(x=>x.registro).join(", ")}${o.isbn?" · ISBN "+esc(o.isbn):""}</span>
+      </span></button>`).join("")}</div>
+  <div class="linhab">
+    <button class="btn mini sec" data-acao="cadastrarDoCodigo">Não está no acervo, cadastrar agora</button>
+    <button class="btn mini sec" data-acao="aba" data-t="emprestimos">Cancelar</button>
+  </div>`;
+};
+DEPOIS.vincular = () => buscaAoVivo("#qVincular","q");
 
 TELAS.catalogo = () => {
   const q = semAcento(ctx.q||""), cat = ctx.cat||"";
@@ -1413,7 +1464,8 @@ TELAS.obra = () => {
         <button class="btn mini sec" data-acao="cancelarEdicao">Cancelar</button></div></div>`;
   }
   const linhas = [["Categoria",o.categoria],["Editora",o.editora],["Ano",o.ano],["Edição",o.edicao],["ISBN",o.isbn],
-    ["Páginas",o.paginas],["Localização", o.estante ? "Estante "+o.estante+(o.prateleira?", prateleira "+o.prateleira:"")+(o.secao?", seção "+o.secao:"") : ""]]
+    ["Páginas",o.paginas],["Códigos vinculados", (o.codigos||[]).join(", ")],
+    ["Localização", o.estante ? "Estante "+o.estante+(o.prateleira?", prateleira "+o.prateleira:"")+(o.secao?", seção "+o.secao:"") : ""]]
     .filter(([,v])=>v);
   return `
   <div class="cartao ficha">
@@ -1469,6 +1521,7 @@ TELAS.etiqueta = () => {
       <div class="cat">${esc((o.titulo||"").slice(0,34))}</div>
       <div class="cat" style="font-weight:600">${esc(o.categoria||"Sem categoria")}${local?" · "+esc(local):""}</div>
       ${svgBarras(r)}
+      <div style="font-size:9px;color:#666;margin-top:2px">Máximus Biblioteca Escolar</div>
       <div class="reg">${r}</div></div>`;
   }).join("")}</div>
   <p class="rot naoimprime">O código impresso é lido pela câmera do próprio aplicativo, no botão Escanear etiqueta.</p>`;
@@ -1930,8 +1983,9 @@ function fecharScanner(){
   if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
 }
 async function tratarCodigo(valor){
-  const o = obraDoRegistro(valor) || S.obras.find(x=>soDigitos(x.isbn) && soDigitos(x.isbn)===soDigitos(valor));
-  if(o){ ir("obra", {id:o.id}); avisar("Livro encontrado no acervo."); return; }
+  const achado = acharExemplar(valor);
+  if(achado){ ir("obra", {id:achado.obra.id}); avisar("Livro encontrado: " + achado.obra.titulo); return; }
+  if(daEquipe() && S.obras.length){ ir("vincular", {codigo: limparCodigo(valor), depois: "ficha"}); return; }
   avisar("Não está no acervo. Buscando os dados...");
   const d = await buscarBiblio({isbn:valor});
   ir("cadastro");
@@ -2119,6 +2173,30 @@ const ACOES = {
   cat: el => { ctx.cat = el.dataset.v; desenhar(); },
   abrirObra: el => ir("obra", {id: el.dataset.id}),
   scanBusca: () => abrirScanner(tratarCodigo),
+  confirmarVinculo: async el => {
+    const o = obra(el.dataset.id);
+    const cod = ctx.codigo;
+    const nova = Object.assign({}, o, {codigos: [...new Set([...(o.codigos||[]), cod])]});
+    try{
+      await guardar("obras", nova);
+      avisar(o.titulo + " agora responde por esse código.");
+      const volta = ctx.depois;
+      if(volta === "emprestimo"){
+        const livre = nova.exemplares.find(x => statusDe(x.registro) === "disponivel");
+        if(livre){ ir("novoEmprestimo", {registro: livre.registro}); return; }
+      }
+      ir("obra", {id:o.id});
+    }catch(e){ avisar("Não consegui salvar o vínculo.", "erro"); }
+  },
+  cadastrarDoCodigo: async () => {
+    const cod = ctx.codigo;
+    ir("cadastro");
+    avisar("Buscando os dados de " + cod + "...");
+    const d = await buscarBiblio({isbn: cod});
+    if(d) Object.assign(ctx.form, d); else ctx.form.isbn = cod;
+    desenhar();
+    avisar(d ? "Encontrado em " + d.fonte + ". Confira e salve." : "Não achei nas bases. Preencha à mão.", d?"ok":"erro");
+  },
   editarObra: () => { ctx.editando = true; desenhar(); },
   cancelarEdicao: () => { ctx.editando = false; desenhar(); },
   salvarEdicao: async () => {
@@ -2157,8 +2235,10 @@ const ACOES = {
   /* empréstimos */
   abaEmp: el => { ctx.aba = el.dataset.v; desenhar(); },
   scanBalcao: () => abrirScanner(async val => {
-    const o = obraDoRegistro(val);
-    if(!o){ avisar("Etiqueta não encontrada no acervo.", "erro"); return; }
+    const a = acharExemplar(val);
+    if(!a){ ir("vincular", {codigo: limparCodigo(val), depois: "emprestimo"}); return; }
+    const o = a.obra;
+    val = a.registro;
     const e = emprestimoAberto(val);
     if(e){
       const a = alunoPorId(e.alunoId);
@@ -2175,11 +2255,11 @@ const ACOES = {
   escolherLivro: el => { ctx.registro = el.dataset.r; ctx.qa=""; desenhar(); },
   voltarLivro: () => { if(ctx.registro){ ctx.registro=null; desenhar(); } else ir("emprestimos"); },
   scanEmprestimo: () => abrirScanner(val => {
-    const o = obraDoRegistro(val);
-    if(!o){ avisar("Etiqueta não encontrada no acervo.", "erro"); return; }
-    const st = statusDe(val);
-    if(st!=="disponivel"){ avisar("Este exemplar está "+NOME_STATUS[st].toLowerCase()+".", "erro"); return; }
-    ctx.registro = val; desenhar(); avisar("Livro selecionado.");
+    const a = acharExemplar(val);
+    if(!a){ ir("vincular", {codigo: limparCodigo(val), depois: "emprestimo"}); return; }
+    const st = statusDe(a.registro);
+    if(st !== "disponivel"){ avisar(a.obra.titulo + " está " + NOME_STATUS[st].toLowerCase() + ".", "erro"); return; }
+    ctx.registro = a.registro; desenhar(); avisar(a.obra.titulo + " selecionado.");
   }),
   confirmarEmprestimo: async el => {
     const novo = {id:uid(), registro:ctx.registro, alunoId:el.dataset.a, emprestimo:hoje(),
