@@ -823,109 +823,44 @@ async function porOpenLibrary(isbn){
   };
 }
 
-/* Baixa a capa e guarda uma miniatura junto do livro, para ela não sumir
-   se o site de origem sair do ar. Se o download for barrado, fica só o link. */
-async function baixarCapa(url, isbn){
-  const tentativas = [url];
-  if(isbn) tentativas.push("https://covers.openlibrary.org/b/isbn/" + isbn + "-M.jpg?default=false");
-  for(const u of tentativas){
-    if(!u) continue;
-    try{
-      const r = await fetch(u, {mode:"cors"});
-      if(!r.ok) continue;
-      const b = await r.blob();
-      if(!b.type.startsWith("image") || b.size < 1200) continue;
-      return await reduzir(b, 320, 0.75);
-    }catch(e){}
-  }
-  return "";
-}
-
-async function porOpenLibrarySearch(isbn){
-  const r = await fetch("https://openlibrary.org/search.json?isbn=" + isbn + "&limit=1");
-  if(!r.ok) return null;
-  const j = await r.json();
-  const d = j.docs && j.docs[0];
-  if(!d || !d.title) return null;
-  return {
-    titulo: d.title, autor: (d.author_name || []).join(", "),
-    editora: (d.publisher || [])[0] || "",
-    ano: d.first_publish_year ? String(d.first_publish_year) : "", isbn: isbn,
-    paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "", sinopse: "",
-    categoria: adivinharCategoria((d.subject || []).slice(0, 25).join(" ")),
-    capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
-    fonte: "Open Library"
-  };
-}
-
-/* Catálogo Máximus: tudo que uma escola cadastra à mão fica disponível para as
-   outras. Livro estrangeiro ou antigo que nenhuma base tem entra aqui uma vez
-   só, e da próxima vez que alguém escanear já vem preenchido. */
-async function lerCatalogo(isbn){
+/* Capa: tenta várias origens, guarda uma miniatura própria e, se o download for
+   barrado pelo site de origem, ao menos deixa o endereço para exibir a imagem. */
+async function baixarImagem(url){
+  if(!url) return "";
   try{
-    const d = await FB.F.getDoc(FB.F.doc(FB.db, "catalogo", isbn));
-    if(d.exists() && d.data().titulo) return Object.assign({}, d.data(), {fonte: "Catálogo Máximus"});
-  }catch(e){}
-  return null;
+    const r = await fetch(url, {mode: "cors"});
+    if(!r.ok) return "";
+    const b = await r.blob();
+    if(!b.type.startsWith("image") || b.size < 1200) return "";
+    return await reduzir(b, 320, 0.75);
+  }catch(e){ return ""; }
 }
-async function gravarCatalogo(o){
+
+async function capaNoGoogle(isbn){
+  try{
+    const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q=isbn:" + isbn);
+    const j = await r.json();
+    const v = j.items && j.items[0] && j.items[0].volumeInfo;
+    const u = v && v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
+    return u ? u.replace("http://", "https://").replace("&edge=curl", "") : "";
+  }catch(e){ return ""; }
+}
+
+async function resolverCapa(o){
   const isbn = soDigitos(o.isbn);
-  if(isbn.length < 10 || !o.titulo || !USUARIO) return;
-  try{
-    await FB.F.setDoc(FB.F.doc(FB.db, "catalogo", isbn), {
-      isbn, titulo: o.titulo, autor: o.autor || "", editora: o.editora || "", ano: o.ano || "",
-      edicao: o.edicao || "", categoria: o.categoria || "", paginas: o.paginas || "",
-      sinopse: o.sinopse || "", capa: o.capa || "", capaUrl: o.capaUrl || "",
-      atualizadoEm: new Date().toISOString(), por: USUARIO.uid
-    }, {merge: true});
-  }catch(e){}
-}
-
-/* Busca por nome do livro: devolve uma lista de opções, com capa, para o
-   usuário escolher a edição certa. É o caminho dos livros antigos, sem código. */
-async function buscarLista(texto){
-  const achados = [];
-  const chave = o => semAcento(o.titulo).slice(0,40) + "|" + semAcento(o.autor).slice(0,20);
-  const vistos = new Set();
-  const juntar = o => { const k = chave(o); if(o.titulo && !vistos.has(k)){ vistos.add(k); achados.push(o); } };
-
-  try{
-    const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=10&q=" + encodeURIComponent(texto));
-    const j = await r.json();
-    (j.items || []).forEach(it => {
-      const v = it.volumeInfo;
-      if(!v || !v.title) return;
-      juntar({
-        titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), autor: (v.authors||[]).join(", "),
-        editora: v.publisher || "", ano: (v.publishedDate||"").slice(0,4),
-        isbn: ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
-        paginas: v.pageCount ? String(v.pageCount) : "", sinopse: (v.description||"").slice(0,600),
-        assuntos: (v.categories||[]).join(" "),
-        categoria: adivinharCategoria((v.categories||[]).join(" ") + " " + (v.description||"")),
-        capaUrl: v.imageLinks ? (v.imageLinks.thumbnail||"").replace("http://","https://") : "",
-        fonte: "Google Books"
-      });
-    });
-  }catch(e){}
-
-  try{
-    const r = await fetch("https://openlibrary.org/search.json?limit=8&q=" + encodeURIComponent(texto));
-    const j = await r.json();
-    (j.docs || []).forEach(d => {
-      if(!d.title) return;
-      juntar({
-        titulo: d.title, autor: (d.author_name||[]).join(", "), editora: (d.publisher||[])[0] || "",
-        ano: d.first_publish_year ? String(d.first_publish_year) : "",
-        isbn: (d.isbn||[])[0] || "", paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "",
-        sinopse: "", assuntos: (d.subject||[]).slice(0,25).join(" "),
-        categoria: adivinharCategoria((d.subject||[]).slice(0,25).join(" ")),
-        capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
-        fonte: "Open Library"
-      });
-    });
-  }catch(e){}
-
-  return achados.slice(0, 12);
+  const urls = [];
+  if(o.capaUrl) urls.push(o.capaUrl);
+  if(isbn){
+    urls.push("https://covers.openlibrary.org/b/isbn/" + isbn + "-L.jpg?default=false");
+    urls.push("https://covers.openlibrary.org/b/isbn/" + isbn + "-M.jpg?default=false");
+    const g = await capaNoGoogle(isbn);
+    if(g) urls.push(g);
+  }
+  for(const u of urls){
+    const d = await baixarImagem(u);
+    if(d) return {capa: d, capaUrl: u};
+  }
+  return {capa: "", capaUrl: urls[0] || ""};
 }
 
 async function buscarBiblio({isbn, texto}){
@@ -945,7 +880,7 @@ async function buscarBiblio({isbn, texto}){
       try{
         const r = await f();
         if(r && r.titulo){
-          r.capa = await baixarCapa(r.capaUrl, limpo);
+          Object.assign(r, await resolverCapa(r));
           r.categoria = await definirCategoria(r);
           return r;
         }
@@ -957,7 +892,7 @@ async function buscarBiblio({isbn, texto}){
     try{
       const r = await porGoogleBooks(encodeURIComponent(texto), "");
       if(r && r.titulo){
-        r.capa = await baixarCapa(r.capaUrl, soDigitos(r.isbn));
+        Object.assign(r, await resolverCapa(r));
         r.categoria = await definirCategoria(r);
         return r;
       }
@@ -1370,8 +1305,10 @@ TELAS.cadastro = () => {
       <button class="btn mini sec" data-acao="fotoCapa">🖼️ Escolher imagem</button>
     </div>
     <input type="file" accept="image/*" capture="environment" id="arqCapa" hidden>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${
-      ctx.fotos.map((x,i)=>`<img class="capa" style="width:64px;height:92px" src="${x.thumb}" alt="foto ${i+1}">`).join("")}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">${
+      ctx.fotos.map((x,i)=>`<img class="capa" style="width:64px;height:92px" src="${x.thumb}" alt="foto ${i+1}">`).join("")}
+      ${(!ctx.fotos.length && (f.capa||f.capaUrl)) ? `<img class="capa" style="width:70px;height:100px"
+        src="${f.capa||f.capaUrl}" alt="capa encontrada"><span class="rot">Capa encontrada</span>` : ""}</div>
     <div class="campo"><label>Ou digite o ISBN ou o título</label>
       <input id="buscaLivro" placeholder="9788522008731 ou O Pequeno Príncipe"></div>
     <button class="btn" data-acao="buscarDados">Buscar dados do livro</button>
@@ -2232,7 +2169,7 @@ const ACOES = {
     const r = ctx.resultados[Number(el.dataset.i)];
     if(!r) return;
     avisar("Trazendo os dados e a capa...");
-    r.capa = await baixarCapa(r.capaUrl, soDigitos(r.isbn));
+    Object.assign(r, await resolverCapa(r));
     r.categoria = await definirCategoria(r);
     Object.assign(ctx.form, r);
     ctx.resultados = null;
