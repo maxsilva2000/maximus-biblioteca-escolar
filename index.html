@@ -289,7 +289,9 @@ async function iniciarFirebase(){
   FB = {app, auth, A: authMod, db, F: fsMod};
 }
 
-const bid = () => USUARIO.bibliotecaId;
+let bibAtiva = null;                       // desenvolvedor visitando outra escola
+const bid = () => bibAtiva || USUARIO.bibliotecaId;
+const visitando = () => !!bibAtiva && bibAtiva !== USUARIO.bibliotecaId;
 const refDoc = (loja, id) => FB.F.doc(FB.db, "bibliotecas", bid(), loja, id);
 const refCol = (loja) => FB.F.collection(FB.db, "bibliotecas", bid(), loja);
 function podeEscrever(){
@@ -1189,7 +1191,11 @@ TELAS.entrar = () => {
         </select></div>
       <div class="campo"><label>Seu nome</label><input id="fNome" autocomplete="name"></div>
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
-      <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres"></div>
+      <div class="campo"><label>Senha</label>
+        <div style="display:flex;gap:8px">
+          <input id="fSenha" type="password" autocomplete="new-password" placeholder="mínimo 6 caracteres">
+          <button class="btn sec" style="width:auto;padding:11px 14px" data-acao="verSenha">👁</button>
+        </div></div>
       <div class="campo" id="campoConvite" style="display:${ctx.tipo==="aluno"?"none":"block"}">
         <label>Código de convite, se você recebeu um</label>
         <input id="fConvite" value="${esc(ctx.convite||"")}" placeholder="deixe vazio se não tiver"
@@ -1215,7 +1221,11 @@ TELAS.entrar = () => {
       Quem trabalha na biblioteca passa por liberação antes do primeiro acesso.</p>
     ` : `
       <div class="campo"><label>E-mail</label><input id="fEmail" type="email" autocomplete="email"></div>
-      <div class="campo"><label>Senha</label><input id="fSenha" type="password" autocomplete="current-password"></div>
+      <div class="campo"><label>Senha</label>
+        <div style="display:flex;gap:8px">
+          <input id="fSenha" type="password" autocomplete="current-password">
+          <button class="btn sec" style="width:auto;padding:11px 14px" data-acao="verSenha">👁</button>
+        </div></div>
       <button class="btn" data-acao="logar">Entrar</button>
       <div class="linhab" style="margin-top:10px;justify-content:center">
         <button class="btn mini sec" data-acao="recuperar">Esqueci a senha</button>
@@ -1251,6 +1261,8 @@ TELAS.inicio = () => {
   const cats = Object.entries(cat).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
   return `${blocoMarca()}
+  ${visitando() ? `<div class="aviso">Você está vendo o acervo de <b>${esc(S.cfg.escola||"outra escola")}</b> como desenvolvedor.
+    <button class="btn mini sec" style="margin-top:8px" data-acao="voltarMinhaBiblioteca">Voltar à minha biblioteca</button></div>` : ""}
   <div class="cartao ficha">
     <div class="num"><span class="rot">📚 Total de livros</span><b>${t.livros}</b></div>
     <div class="num"><span class="rot">📗 Disponíveis</span><b>${t.disponiveis}</b></div>
@@ -1826,6 +1838,8 @@ TELAS.ajustes = () => ehAluno() ? `
     <div class="num"><span class="rot">E-mail</span><span class="dir">${esc(USUARIO.email)}</span></div>
     <div class="num"><span class="rot">Perfil</span><span class="papel ${USUARIO.papel}">${PAPEIS[USUARIO.papel]||USUARIO.papel}</span></div>
     <div class="num"><span class="rot">Código da biblioteca</span><span class="dir reg">${USUARIO.bibliotecaId.slice(0,8).toUpperCase()}</span></div>
+    ${visitando() ? `<div class="aviso" style="margin-top:10px">Visitando <b>${esc(S.cfg.escola||"")}</b>.
+      <button class="btn mini sec" style="margin-top:8px" data-acao="voltarMinhaBiblioteca">Voltar à minha</button></div>` : ""}
     <p class="rot">Passe esse código para outro funcionário criar a conta dele e trabalhar no mesmo acervo.</p>
     <div class="linhab">
       ${ehAdmin()?`<button class="btn mini sec" data-acao="aba" data-t="usuarios">Usuários</button>`:""}
@@ -1901,7 +1915,8 @@ TELAS.escolas = () => {
             <div class="serif" style="font-size:15px">${esc(e.nome)}</div>
             <div class="reg">${e.padrao ? "da lista, sem biblioteca aberta ainda" : "biblioteca ativa"}</div>
           </div>
-          ${e.padrao ? "" : `<div style="display:flex;gap:6px">
+          ${e.padrao ? "" : `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="chip on" data-acao="abrirBiblioteca" data-e="${esc(e.id)}">Abrir acervo</button>
             <button class="chip" data-acao="renomearEscola" data-e="${esc(e.id)}">Renomear</button>
             <button class="chip" data-acao="excluirEscola" data-e="${esc(e.id)}">Excluir</button>
           </div>`}</div>`).join("")}
@@ -2135,6 +2150,14 @@ async function tratarCodigo(valor){
    ================================================================ */
 const ACOES = {
   /* acesso */
+  verSenha: el => {
+    const i = $("#fSenha");
+    if(!i) return;
+    const mostrando = i.type === "text";
+    i.type = mostrando ? "password" : "text";
+    el.textContent = mostrando ? "👁" : "🙈";
+    i.focus();
+  },
   modoEntrar: () => { ctx.modo = "entrar"; desenhar(); },
   modoCriar: () => { ctx.modo = "criar"; desenhar(); },
   logar: async () => {
@@ -2542,6 +2565,22 @@ const ACOES = {
     }catch(e){ avisar("Não consegui desativar.", "erro"); }
   },
   recarregarEscolas: async () => { ctx.escolas = await listarEscolas(); desenhar(); },
+  abrirBiblioteca: async el => {
+    if(!ehDev()){ avisar("Só o desenvolvedor pode abrir outra biblioteca.", "erro"); return; }
+    const e = (ctx.escolas || []).find(x => x.id === el.dataset.e);
+    bibAtiva = (e && e.bibliotecaId) || el.dataset.e;
+    S.obras = []; S.alunos = []; S.emprestimos = []; S.pedidos = [];
+    avisar("Abrindo " + ((e && e.nome) || "a biblioteca") + "...");
+    try{ await carregarTudo(); }catch(err){ avisar("Não consegui carregar essa biblioteca.", "erro"); }
+    ir("inicio");
+  },
+  voltarMinhaBiblioteca: async () => {
+    bibAtiva = null;
+    S.obras = []; S.alunos = []; S.emprestimos = []; S.pedidos = [];
+    try{ await carregarTudo(); }catch(e){}
+    ir("inicio");
+    avisar("De volta à sua biblioteca.");
+  },
   criarEscola: async () => {
     const nome = ($("#novaEscola").value||"").trim();
     if(!nome){ avisar("Informe o nome da escola.", "erro"); return; }
