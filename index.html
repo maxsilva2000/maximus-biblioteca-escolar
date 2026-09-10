@@ -878,6 +878,102 @@ async function resolverCapa(o){
   return {capa: "", capaUrl: urls[0] || ""};
 }
 
+/* Busca por nome do livro: devolve uma lista de opções, com capa, para escolher
+   a edição certa. É o caminho dos livros antigos, sem código de barras. */
+async function buscarLista(texto){
+  const achados = [];
+  const vistos = new Set();
+  const juntar = o => {
+    const k = semAcento(o.titulo).slice(0,40) + "|" + semAcento(o.autor).slice(0,20);
+    if(o.titulo && !vistos.has(k)){ vistos.add(k); achados.push(o); }
+  };
+
+  const [g, ol] = await Promise.all([
+    comTempo(fetch("https://www.googleapis.com/books/v1/volumes?maxResults=10&q=" + encodeURIComponent(texto)), 8000),
+    comTempo(fetch("https://openlibrary.org/search.json?limit=8&q=" + encodeURIComponent(texto)), 8000)
+  ]);
+
+  if(g && g.ok){
+    try{
+      const j = await g.json();
+      (j.items || []).forEach(it => {
+        const v = it.volumeInfo;
+        if(!v || !v.title) return;
+        juntar({
+          titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), autor: (v.authors||[]).join(", "),
+          editora: v.publisher || "", ano: (v.publishedDate||"").slice(0,4),
+          isbn: ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
+          paginas: v.pageCount ? String(v.pageCount) : "", sinopse: (v.description||"").slice(0,600),
+          assuntos: (v.categories||[]).join(" "),
+          categoria: adivinharCategoria((v.categories||[]).join(" ") + " " + (v.description||"")),
+          capaUrl: v.imageLinks ? (v.imageLinks.thumbnail||"").replace("http://","https://") : "",
+          fonte: "Google Books"
+        });
+      });
+    }catch(e){}
+  }
+
+  if(ol && ol.ok){
+    try{
+      const j = await ol.json();
+      (j.docs || []).forEach(d => {
+        if(!d.title) return;
+        juntar({
+          titulo: d.title, autor: (d.author_name||[]).join(", "), editora: (d.publisher||[])[0] || "",
+          ano: d.first_publish_year ? String(d.first_publish_year) : "",
+          isbn: (d.isbn||[])[0] || "", paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "",
+          sinopse: "", assuntos: (d.subject||[]).slice(0,25).join(" "),
+          categoria: adivinharCategoria((d.subject||[]).slice(0,25).join(" ")),
+          capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
+          fonte: "Open Library"
+        });
+      });
+    }catch(e){}
+  }
+
+  return achados.slice(0, 12);
+}
+
+async function porOpenLibrarySearch(isbn){
+  const r = await fetch("https://openlibrary.org/search.json?isbn=" + isbn + "&limit=1");
+  if(!r.ok) return null;
+  const j = await r.json();
+  const d = j.docs && j.docs[0];
+  if(!d || !d.title) return null;
+  return {
+    titulo: d.title, autor: (d.author_name || []).join(", "),
+    editora: (d.publisher || [])[0] || "",
+    ano: d.first_publish_year ? String(d.first_publish_year) : "", isbn: isbn,
+    paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "", sinopse: "",
+    assuntos: (d.subject || []).slice(0, 25).join(" "),
+    categoria: adivinharCategoria((d.subject || []).slice(0, 25).join(" ")),
+    capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
+    fonte: "Open Library"
+  };
+}
+
+/* Catálogo Máximus: o que uma escola cadastra à mão fica disponível para as
+   outras. Livro que nenhuma base tem entra aqui uma vez só. */
+async function lerCatalogo(isbn){
+  try{
+    const d = await FB.F.getDoc(FB.F.doc(FB.db, "catalogo", isbn));
+    if(d.exists() && d.data().titulo) return Object.assign({}, d.data(), {fonte: "Catálogo Máximus"});
+  }catch(e){}
+  return null;
+}
+async function gravarCatalogo(o){
+  const isbn = soDigitos(o.isbn);
+  if(isbn.length < 10 || !o.titulo || !USUARIO) return;
+  try{
+    await FB.F.setDoc(FB.F.doc(FB.db, "catalogo", isbn), {
+      isbn, titulo: o.titulo, autor: o.autor || "", editora: o.editora || "", ano: o.ano || "",
+      edicao: o.edicao || "", categoria: o.categoria || "", paginas: o.paginas || "",
+      sinopse: o.sinopse || "", capa: o.capa || "", capaUrl: o.capaUrl || "",
+      atualizadoEm: new Date().toISOString(), por: USUARIO.uid
+    }, {merge: true});
+  }catch(e){}
+}
+
 async function buscarBiblio({isbn, texto}){
   const limpo = soDigitos(isbn);
   if(limpo.length >= 10){
