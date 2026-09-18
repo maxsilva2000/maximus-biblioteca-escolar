@@ -110,8 +110,10 @@ textarea{min-height:86px;resize:vertical}
 .c-reservado{color:var(--res);border-color:var(--res)}
 
 .reg{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--soft);letter-spacing:.04em}
-.capa{width:52px;height:74px;object-fit:cover;border-radius:4px;border:1px solid var(--forte);background:#232529;
+.capa{width:60px;height:86px;object-fit:cover;border-radius:4px;border:1px solid var(--forte);background:#232529;
  flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:20px;color:#6E6C66}
+.capa-g{width:96px;height:138px;font-size:30px;border-radius:6px}
+@media(max-width:360px){.capa-g{width:78px;height:112px}}
 .item{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--linha);cursor:pointer;
  width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left;color:inherit}
 .item:last-child{border-bottom:0}
@@ -1453,7 +1455,9 @@ TELAS.catalogo = () => {
         const disp = o.exemplares.filter(x => statusDe(x.registro) === "disponivel").length;
         const pedido = S.pedidos.find(p => p.obraId === o.id && p.status === "aguardando");
         return `<div class="item" style="cursor:default">
-          ${o.capa||o.capaUrl ? `<img class="capa" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa">📕</span>`}
+          ${o.capa||o.capaUrl
+            ? `<img class="capa capa-g" src="${o.capa||o.capaUrl}" alt="" onerror="this.outerHTML='<span class=\'capa capa-g\'>📕</span>'">`
+            : `<span class="capa capa-g">📕</span>`}
           <div style="flex:1;min-width:0">
             <h3 class="serif">${esc(o.titulo)}</h3>
             <div class="meta">${esc(o.autor||"Autor não informado")}${o.ano?", "+esc(o.ano):""}</div>
@@ -1632,7 +1636,9 @@ TELAS.acervo = () => {
         const disp = st.filter(s=>s==="disponivel").length;
         const s = disp>0 ? "disponivel" : st.includes("atrasado") ? "atrasado" : "emprestado";
         return `<button class="item" data-acao="abrirObra" data-id="${o.id}">
-          ${o.capa||o.capaUrl ? `<img class="capa" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa">📕</span>`}
+          ${o.capa||o.capaUrl
+            ? `<img class="capa capa-g" src="${o.capa||o.capaUrl}" alt="" onerror="this.outerHTML='<span class=\'capa capa-g\'>📕</span>'">`
+            : `<span class="capa capa-g">📕</span>`}
           <span style="flex:1;min-width:0">
             <span class="serif" style="font-size:16px;display:block">${esc(o.titulo)}</span>
             <span class="meta" style="display:block">${esc(o.autor||"Autor não informado")}${o.ano?", "+esc(o.ano):""}</span>
@@ -1680,7 +1686,7 @@ TELAS.obra = () => {
   return `
   <div class="cartao ficha">
     <div style="display:flex;gap:14px">
-      ${o.capa||o.capaUrl ? `<img class="capa" style="width:70px;height:100px" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa" style="width:70px;height:100px">📕</span>`}
+      ${o.capa||o.capaUrl ? `<img class="capa" style="width:118px;height:168px" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa" style="width:118px;height:168px">📕</span>`}
       <div style="flex:1;min-width:0"><h2 style="margin-bottom:4px">${esc(o.titulo)}</h2>
         <div class="rot">${esc(o.autor||"Autor não informado")}</div></div>
     </div>
