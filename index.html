@@ -185,6 +185,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   th,td{white-space:normal;border-bottom:1px solid #ccc}
   .folha{grid-template-columns:repeat(3,1fr);gap:6mm}
   .etiqueta{page-break-inside:avoid;break-inside:avoid;border:1px dashed #999}
+  table img{width:26px!important;height:36px!important}
+  tr{page-break-inside:avoid}
 }
 </style>
 </head>
@@ -817,6 +819,7 @@ async function porGoogleBooks(consulta, isbn){
     isbn: isbn || ((v.industryIdentifiers || []).find(i => i.type === "ISBN_13") || {}).identifier || "",
     paginas: v.pageCount ? String(v.pageCount) : "",
     sinopse: (v.description || "").slice(0, 600),
+    idioma: nomeIdioma(v.language || ""),
     categoria: adivinharCategoria((v.categories || []).join(" ") + " " + (v.description || "")),
     assuntos: (v.categories || []).join(" "),
     capaUrl: v.imageLinks ? (v.imageLinks.thumbnail || "").replace("http://", "https://") : "",
@@ -853,6 +856,20 @@ async function baixarImagem(url){
   }catch(e){ return ""; }
 }
 
+/* última tentativa de sinopse: procura pelo título quando o ISBN não devolveu nada */
+async function sinopseNoGoogle(isbn, titulo){
+  for(const q of ["isbn:" + isbn, encodeURIComponent(titulo || "")]){
+    if(!q) continue;
+    try{
+      const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q=" + q);
+      const j = await r.json();
+      const v = j.items && j.items[0] && j.items[0].volumeInfo;
+      if(v && v.description) return v.description.slice(0, 600);
+    }catch(e){}
+  }
+  return "";
+}
+
 async function capaNoGoogle(isbn){
   try{
     const r = await fetch("https://www.googleapis.com/books/v1/volumes?maxResults=1&q=isbn:" + isbn);
@@ -861,6 +878,20 @@ async function capaNoGoogle(isbn){
     const u = v && v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
     return u ? u.replace("http://", "https://").replace("&edge=curl", "") : "";
   }catch(e){ return ""; }
+}
+
+/* confere se a imagem existe de verdade antes de anunciar que achou a capa */
+function testarImagem(url){
+  return new Promise(res => {
+    if(!url) return res(false);
+    const i = new Image();
+    let respondido = false;
+    const fim = v => { if(!respondido){ respondido = true; res(v); } };
+    i.onload = () => fim(i.naturalWidth > 20 && i.naturalHeight > 20);
+    i.onerror = () => fim(false);
+    i.src = url;
+    setTimeout(() => fim(false), 6000);
+  });
 }
 
 async function resolverCapa(o){
@@ -873,11 +904,13 @@ async function resolverCapa(o){
     const g = await capaNoGoogle(isbn);
     if(g) urls.push(g);
   }
+  let visivel = "";
   for(const u of urls){
     const d = await baixarImagem(u);
     if(d) return {capa: d, capaUrl: u};
+    if(!visivel && await testarImagem(u)) visivel = u;
   }
-  return {capa: "", capaUrl: urls[0] || ""};
+  return {capa: "", capaUrl: visivel};
 }
 
 /* Busca por nome do livro: devolve uma lista de opções, com capa, para escolher
@@ -936,6 +969,61 @@ async function buscarLista(texto){
   return achados.slice(0, 12);
 }
 
+const IDIOMAS = {pt:"Português", por:"Português", en:"Inglês", eng:"Inglês", es:"Espanhol", spa:"Espanhol",
+  fr:"Francês", fre:"Francês", de:"Alemão", ger:"Alemão", it:"Italiano", ita:"Italiano", ja:"Japonês",
+  jpn:"Japonês", la:"Latim", lat:"Latim", ru:"Russo", rus:"Russo", zh:"Chinês", chi:"Chinês"};
+const nomeIdioma = c => IDIOMAS[String(c||"").toLowerCase()] || (c ? String(c).toUpperCase() : "");
+
+/* Rota direta do Open Library: pega edições que a busca por ISBN não devolve,
+   comum em livro estrangeiro e em edição antiga. */
+async function porOpenLibraryIsbn(isbn){
+  const r = await fetch("https://openlibrary.org/isbn/" + isbn + ".json");
+  if(!r.ok) return null;
+  const v = await r.json();
+  if(!v || !v.title) return null;
+  let autor = "";
+  try{
+    const k = v.authors && v.authors[0] && v.authors[0].key;
+    if(k){
+      const a = await fetch("https://openlibrary.org" + k + ".json");
+      if(a.ok){ const j = await a.json(); autor = j.name || ""; }
+    }
+  }catch(e){}
+  return {
+    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), autor,
+    editora: (v.publishers || [])[0] || "", ano: (v.publish_date || "").slice(-4), isbn,
+    edicao: v.edition_name || "", paginas: v.number_of_pages ? String(v.number_of_pages) : "",
+    sinopse: typeof v.description === "string" ? v.description.slice(0,600)
+      : (v.description && v.description.value ? v.description.value.slice(0,600) : ""),
+    idioma: nomeIdioma(((v.languages || [])[0] || {}).key ? v.languages[0].key.split("/").pop() : ""),
+    assuntos: (v.subjects || []).join(" "),
+    categoria: adivinharCategoria((v.subjects || []).join(" ")),
+    capaUrl: (v.covers && v.covers[0]) ? "https://covers.openlibrary.org/b/id/" + v.covers[0] + "-L.jpg" : "",
+    fonte: "Open Library"
+  };
+}
+
+/* Library of Congress: catálogo dos Estados Unidos, forte em obra estrangeira. */
+async function porLibraryOfCongress(isbn){
+  const r = await fetch("https://www.loc.gov/books/?q=" + isbn + "&fo=json&c=1");
+  if(!r.ok) return null;
+  const j = await r.json();
+  const d = j.results && j.results[0];
+  if(!d || !d.title) return null;
+  const ano = (d.date || (d.dates || [])[0] || "").toString().match(/\d{4}/);
+  return {
+    titulo: d.title, autor: (d.contributor || []).join(", "),
+    editora: (d.publisher || d.item && d.item.publisher || [""])[0] || "",
+    ano: ano ? ano[0] : "", isbn,
+    paginas: "", sinopse: (d.description || [""])[0] || "",
+    idioma: nomeIdioma((d.language || [])[0] || ""),
+    assuntos: (d.subject || []).join(" "),
+    categoria: adivinharCategoria((d.subject || []).join(" ")),
+    capaUrl: (d.image_url || [])[0] || "",
+    fonte: "Library of Congress"
+  };
+}
+
 async function porOpenLibrarySearch(isbn){
   const r = await fetch("https://openlibrary.org/search.json?isbn=" + isbn + "&limit=1");
   if(!r.ok) return null;
@@ -989,12 +1077,33 @@ async function buscarBiblio({isbn, texto}){
       comTempo(porMercadoEditorial(limpo), 8000),
       comTempo(porGoogleBooks("isbn:" + limpo, limpo), 8000),
       comTempo(porOpenLibrarySearch(limpo), 8000),
-      comTempo(porOpenLibrary(limpo), 8000)
+      comTempo(porOpenLibrary(limpo), 8000),
+      comTempo(porOpenLibraryIsbn(limpo), 8000),
+      comTempo(porLibraryOfCongress(limpo), 9000)
     ]);
-    const r = respostas.find(x => x && x.titulo);
-    if(!r) return null;
-    Object.assign(r, (await comTempo(resolverCapa(r), 7000)) || {});
-    r.categoria = (await comTempo(definirCategoria(r), 6000)) || r.categoria || "Outros";
+    const validas = respostas.filter(x => x && x.titulo);
+    if(!validas.length) return null;
+
+    /* a primeira resposta manda, e as outras completam o que ficou em branco:
+       a base brasileira costuma ter os dados e faltar sinopse, e o Google
+       costuma ter sinopse e assunto */
+    const r = Object.assign({}, validas[0]);
+    const fontes = [r.fonte];
+    for(const outra of validas.slice(1)){
+      let usou = false;
+      ["autor","editora","ano","edicao","paginas","sinopse","assuntos","capaUrl","idioma"].forEach(k => {
+        if(!r[k] && outra[k]){ r[k] = outra[k]; usou = true; }
+      });
+      if(!CATEGORIAS.includes(r.categoria) && CATEGORIAS.includes(outra.categoria)){
+        r.categoria = outra.categoria; usou = true;
+      }
+      if(usou) fontes.push(outra.fonte);
+    }
+    r.fonte = [...new Set(fontes)].join(" e ");
+
+    Object.assign(r, (await comTempo(resolverCapa(r), 8000)) || {});
+    r.categoria = (await comTempo(definirCategoria(r), 8000)) || r.categoria || "Outros";
+    if(!r.sinopse) r.sinopse = (await comTempo(sinopseNoGoogle(limpo, r.titulo), 6000)) || "";
     return r;
   }
   if(texto){
@@ -1108,7 +1217,7 @@ const ABAS_ALUNO = [["catalogo","📚","Catálogo"],["meuspedidos","📖","Meus 
 const abas = () => ehAluno() ? ABAS_ALUNO : ABAS_EQUIPE;
 
 const formVazio = () => ({titulo:"",autor:"",editora:"",ano:"",isbn:"",edicao:"",categoria:"",paginas:"",
-  sinopse:"",capa:"",capaUrl:"",estante:"",prateleira:"",secao:"",codigos:[]});
+  idioma:"",sinopse:"",capa:"",capaUrl:"",estante:"",prateleira:"",secao:"",codigos:[]});
 const anotarCodigo = cod => {
   const c = limparCodigo(cod);
   if(!c || !ctx.form) return;
@@ -1425,7 +1534,7 @@ TELAS.cadastro = () => {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">${
       ctx.fotos.map((x,i)=>`<img class="capa" style="width:64px;height:92px" src="${x.thumb}" alt="foto ${i+1}">`).join("")}
       ${(!ctx.fotos.length && (f.capa||f.capaUrl)) ? `<img class="capa" style="width:70px;height:100px"
-        src="${f.capa||f.capaUrl}" alt="capa encontrada"><span class="rot">Capa encontrada</span>` : ""}</div>
+        src="${f.capa||f.capaUrl}" alt="" onerror="this.parentNode.removeChild(this)"><span class="rot">Capa encontrada</span>` : ""}</div>
     <div class="campo"><label>Ou digite o ISBN ou o título</label>
       <input id="buscaLivro" placeholder="9788522008731 ou O Pequeno Príncipe"></div>
     <button class="btn" data-acao="buscarDados">Buscar dados do livro</button>
@@ -1464,11 +1573,9 @@ TELAS.cadastro = () => {
     ${campo("Título","titulo")}${campo("Autor","autor")}
     <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
     <div class="dupla">${campo("ISBN","isbn")}${campo("Edição","edicao")}</div>
-    <div class="dupla">
-      <div class="campo"><label>Categoria</label><select data-campo="categoria"><option value="">Selecione</option>
-        ${CATEGORIAS.map(c=>`<option ${f.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
-      ${campo("Páginas","paginas")}
-    </div>
+    <div class="campo"><label>Categoria</label><select data-campo="categoria"><option value="">Selecione</option>
+      ${CATEGORIAS.map(c=>`<option ${f.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
+    <div class="dupla">${campo("Idioma","idioma",'placeholder="Português"')}${campo("Páginas","paginas")}</div>
     <div class="campo"><label>Sinopse</label><textarea data-campo="sinopse">${esc(f.sinopse)}</textarea></div>
   </div>
   <div class="cartao"><h2>3. Onde fica e quantos exemplares</h2>
@@ -1497,7 +1604,7 @@ function listaAcervo(){
   const lista = S.obras.filter(o => {
     if(cat && o.categoria!==cat) return false;
     if(!q) return true;
-    return [o.titulo,o.autor,o.editora,o.categoria,o.isbn,o.secao].some(c=>semAcento(c).includes(q))
+    return [o.titulo,o.autor,o.editora,o.categoria,o.isbn,o.secao,o.idioma].some(c=>semAcento(c).includes(q))
       || o.exemplares.some(x=>x.registro.includes(q));
   });
   const chave = o => ordem==="registro" ? (o.exemplares[0]?o.exemplares[0].registro:"zzzzz")
@@ -1556,9 +1663,10 @@ TELAS.obra = () => {
       ${c("Título","titulo")}${c("Autor","autor")}
       <div class="dupla">${c("Editora","editora")}${c("Ano","ano")}</div>
       <div class="dupla">${c("ISBN","isbn")}${c("Edição","edicao")}</div>
-      <div class="dupla"><div class="campo"><label>Categoria</label><select data-edit="categoria">
+      <div class="campo"><label>Categoria</label><select data-edit="categoria">
         <option value="">Selecione</option>${CATEGORIAS.map(x=>`<option ${o.categoria===x?"selected":""}>${x}</option>`).join("")}
-        </select></div>${c("Páginas","paginas")}</div>
+        </select></div>
+      <div class="dupla">${c("Idioma","idioma")}${c("Páginas","paginas")}</div>
       <div class="dupla">${c("Estante","estante")}${c("Prateleira","prateleira")}</div>
       ${c("Seção","secao")}
       <div class="campo"><label>Sinopse</label><textarea data-edit="sinopse">${esc(o.sinopse||"")}</textarea></div>
@@ -1566,7 +1674,7 @@ TELAS.obra = () => {
         <button class="btn mini sec" data-acao="cancelarEdicao">Cancelar</button></div></div>`;
   }
   const linhas = [["Categoria",o.categoria],["Editora",o.editora],["Ano",o.ano],["Edição",o.edicao],["ISBN",o.isbn],
-    ["Páginas",o.paginas],["Códigos vinculados", (o.codigos||[]).join(", ")],
+    ["Idioma",o.idioma],["Páginas",o.paginas],["Códigos vinculados", (o.codigos||[]).join(", ")],
     ["Localização", o.estante ? "Estante "+o.estante+(o.prateleira?", prateleira "+o.prateleira:"")+(o.secao?", seção "+o.secao:"") : ""]]
     .filter(([,v])=>v);
   return `
@@ -1767,14 +1875,16 @@ TELAS.aluno = () => {
 const RELS = [["acervo","Lista completa do acervo"],["categoria","Livros por categoria"],["autor","Livros por autor"],
   ["emprestados","Livros emprestados"],["atrasados","Livros atrasados"],["disponiveis","Livros disponíveis"],
   ["historico","Histórico de empréstimos"],["estante","Acervo por estante"],["quantidade","Quantidade por categoria"],
-  ["alunos","Alunos cadastrados"]];
+  ["idioma","Acervo por idioma"],["alunos","Alunos cadastrados"]];
 
 function linhasRelatorio(tipo){
-  const ex = S.obras.flatMap(o=>o.exemplares.map(x=>({Registro:x.registro, Titulo:o.titulo, Autor:o.autor,
-    Editora:o.editora, Ano:o.ano, Categoria:o.categoria, ISBN:o.isbn, Estante:o.estante, Prateleira:o.prateleira,
+  const ex = S.obras.flatMap(o=>o.exemplares.map(x=>({Capa: o.capa || o.capaUrl || "",
+    Registro:x.registro, Titulo:o.titulo, Autor:o.autor,
+    Editora:o.editora, Ano:o.ano, Categoria:o.categoria, Idioma:o.idioma||"", ISBN:o.isbn,
+    Estante:o.estante, Prateleira:o.prateleira,
     Secao:o.secao, Status:NOME_STATUS[statusDe(x.registro)]})));
   const daEmp = e => { const o=obraDoRegistro(e.registro), a=alunoPorId(e.alunoId);
-    return {Registro:e.registro, Titulo:o?o.titulo:"", Aluno:a?a.nome:"", Turma:a?a.turma:"", Matricula:a?a.matricula:"",
+    return {Capa: o ? (o.capa || o.capaUrl || "") : "", Registro:e.registro, Titulo:o?o.titulo:"", Aluno:a?a.nome:"", Turma:a?a.turma:"", Matricula:a?a.matricula:"",
       Emprestimo:brDate(e.emprestimo), Previsao:brDate(e.prevista), Devolucao:e.devolucao?brDate(e.devolucao):"",
       Situacao: e.devolucao?"Devolvido":diasAte(e.prevista)<0?"Atrasado":"Em aberto"}; };
   switch(tipo){
@@ -1782,6 +1892,7 @@ function linhasRelatorio(tipo){
     case "categoria": return [...ex].sort((a,b)=>(a.Categoria||"zz")<(b.Categoria||"zz")?-1:1);
     case "autor": return [...ex].sort((a,b)=>semAcento(a.Autor)<semAcento(b.Autor)?-1:1);
     case "estante": return [...ex].sort((a,b)=>((a.Estante||"zz")+a.Prateleira)<((b.Estante||"zz")+b.Prateleira)?-1:1);
+    case "idioma": return [...ex].sort((a,b)=>(a.Idioma||"zz")<(b.Idioma||"zz")?-1:1);
     case "disponiveis": return ex.filter(l=>l.Status==="Disponível");
     case "emprestados": return S.emprestimos.filter(e=>!e.devolucao).map(daEmp);
     case "atrasados": return S.emprestimos.filter(e=>!e.devolucao && diasAte(e.prevista)<0).map(daEmp);
@@ -1810,7 +1921,10 @@ TELAS.relatorios = () => {
       <div class="rot" style="margin-bottom:10px">${esc(S.cfg.escola)} · ${linhas.length} registro(s) · ${brDate(hoje())}</div>
       ${linhas.length===0?`<div class="vazio">Nada para mostrar neste relatório.</div>`:`
       <div style="overflow-x:auto"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-        <tbody>${linhas.slice(0,400).map(l=>`<tr>${cols.map(c=>`<td>${esc(l[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+        <tbody>${linhas.slice(0,400).map(l=>`<tr>${cols.map(c=> c==="Capa"
+          ? `<td>${l[c] ? `<img src="${l[c]}" alt="" style="width:30px;height:42px;object-fit:cover;border-radius:3px"
+              onerror="this.style.display='none'">` : ""}</td>`
+          : `<td>${esc(l[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
       ${linhas.length>400?`<p class="rot">Mostrando os 400 primeiros. Exporte para Excel para ver a lista inteira.</p>`:""}`}
     </div>`;
 };
@@ -2709,6 +2823,7 @@ function baixar(blob, nome){
 }
 function exportarPlanilha(linhas, nome){
   if(!linhas.length){ avisar("Nada para exportar.", "erro"); return; }
+  linhas = linhas.map(l => { const c = Object.assign({}, l); delete c.Capa; return c; });
   if(window.XLSX){
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), nome.slice(0,28));
