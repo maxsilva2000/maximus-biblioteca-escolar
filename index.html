@@ -1004,7 +1004,7 @@ async function porBrasilAPI(isbn){
   const v = await r.json();
   if(!v || !v.title) return null;
   return {
-    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""),
+    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), subtitulo: v.subtitle || "",
     autor: (v.authors || []).join(", "),
     editora: v.publisher || "",
     ano: v.year ? String(v.year) : "",
@@ -1049,7 +1049,7 @@ async function porGoogleBooks(consulta, isbn){
   const v = j.items && j.items[0] && j.items[0].volumeInfo;
   if(!v || !v.title) return null;
   return {
-    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""),
+    titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), subtitulo: v.subtitle || "",
     autor: (v.authors || []).join(", "),
     editora: v.publisher || "",
     ano: (v.publishedDate || "").slice(0, 4),
@@ -1094,6 +1094,25 @@ async function baixarImagem(url){
 }
 
 /* última tentativa de sinopse: procura pelo título quando o ISBN não devolveu nada */
+/* A edição quase nunca vem em campo próprio: costuma estar escrita no título,
+   no subtítulo ou na sinopse. Aqui ela é extraída desses textos. */
+function acharEdicao(r){
+  if(r.edicao) return String(r.edicao).replace(/^(\d+)$/, "$1ª edição");
+  const texto = [r.titulo, r.subtitulo, r.assuntos, (r.sinopse||"").slice(0,300)].filter(Boolean).join(" ");
+  let m = texto.match(/(\d{1,2})\s*[ªa°]?\s*\.?\s*(?:edi[çc][ãa]o|ed\b)/i);
+  if(m) return m[1] + "ª edição";
+  m = texto.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+edition\b/i);
+  if(m) return m[1] + "ª edição";
+  if(/edi[çc][ãa]o\s+revis/i.test(texto)) return "Edição revisada";
+  if(/edi[çc][ãa]o\s+ampliada/i.test(texto)) return "Edição ampliada";
+  if(/nova\s+edi[çc][ãa]o|new\s+edition/i.test(texto)) return "Nova edição";
+  if(/edi[çc][ãa]o\s+comemorativa/i.test(texto)) return "Edição comemorativa";
+  if(/edi[çc][ãa]o\s+especial|special\s+edition/i.test(texto)) return "Edição especial";
+  if(/edi[çc][ãa]o\s+de\s+bolso|pocket\s+edition/i.test(texto)) return "Edição de bolso";
+  if(/edi[çc][ãa]o\s+ilustrada|illustrated\s+edition/i.test(texto)) return "Edição ilustrada";
+  return "";
+}
+
 async function sinopseNoGoogle(isbn, titulo){
   for(const q of ["isbn:" + isbn, encodeURIComponent(titulo || "")]){
     if(!q) continue;
@@ -1172,7 +1191,8 @@ async function buscarLista(texto){
         const v = it.volumeInfo;
         if(!v || !v.title) return;
         juntar({
-          titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), autor: (v.authors||[]).join(", "),
+          titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), subtitulo: v.subtitle || "",
+          autor: (v.authors||[]).join(", "),
           editora: v.publisher || "", ano: (v.publishedDate||"").slice(0,4),
           isbn: ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
           paginas: v.pageCount ? String(v.pageCount) : "", sinopse: (v.description||"").slice(0,600),
@@ -1341,6 +1361,7 @@ async function buscarBiblio({isbn, texto}){
     Object.assign(r, (await comTempo(resolverCapa(r), 8000)) || {});
     r.categoria = (await comTempo(definirCategoria(r), 8000)) || r.categoria || "Outros";
     if(!r.sinopse) r.sinopse = (await comTempo(sinopseNoGoogle(limpo, r.titulo), 6000)) || "";
+    r.edicao = acharEdicao(r);
     return r;
   }
   if(texto){
@@ -1348,6 +1369,7 @@ async function buscarBiblio({isbn, texto}){
     if(r && r.titulo){
       Object.assign(r, (await comTempo(resolverCapa(r), 7000)) || {});
       r.categoria = (await comTempo(definirCategoria(r), 6000)) || r.categoria || "Outros";
+      r.edicao = acharEdicao(r);
       return r;
     }
   }
@@ -2249,6 +2271,18 @@ TELAS.ajustes = () => ehAluno() ? `
       : `<button class="btn mini" data-acao="ativarAvisos">Ativar avisos</button>`}
   </div>
 
+  <div class="cartao"><h2>Leitor de código USB</h2>
+    <p class="rot" style="margin-top:0">Para o leitor de pistola ligado por cabo. Ele funciona como teclado:
+    você aponta, ele lê, e o aplicativo entende sozinho, sem abrir a câmera.</p>
+    <div class="chips">
+      <button class="chip ${leitorUSBLigado()?"on":""}" data-acao="leitorUSB">
+        ${leitorUSBLigado()?"Leitor USB ligado":"Leitor USB desligado"}</button>
+    </div>
+    <div class="campo" style="margin-top:10px"><label>Teste o leitor aqui</label>
+      <input id="testeUSB" placeholder="dispare o leitor em qualquer código"></div>
+    <p class="rot" style="margin:0">Se o número aparecer no campo, o leitor está conversando com o aplicativo.</p>
+  </div>
+
   <div class="cartao"><h2>Aparência</h2>
     <p class="rot" style="margin-top:0">Vale só para este aparelho.</p>${chipsTema()}</div>
 
@@ -2389,6 +2423,70 @@ TELAS.usuarios = () => {
    Scanner
    ================================================================ */
 let stream = null, lendo = false, aoLer = null, faixa = null;
+
+/* Leitor USB de código de barras: esses aparelhos funcionam como teclado.
+   Digitam o código muito rápido e terminam com Enter. É essa assinatura que
+   distingue a leitura da digitação de uma pessoa. */
+function leitorUSBLigado(){
+  try{ return localStorage.getItem("maximus:usb") !== "off"; }catch(e){ return true; }
+}
+let bufUSB = "", ultimaTecla = 0;
+
+document.addEventListener("keydown", async e => {
+  if(!leitorUSBLigado() || !USUARIO) return;
+  const alvo = e.target || {};
+  const emCampo = /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName || "");
+  const agora = Date.now();
+  if(agora - ultimaTecla > 150) bufUSB = "";
+  ultimaTecla = agora;
+
+  if(e.key === "Enter"){
+    const cod = bufUSB.trim();
+    bufUSB = "";
+    if(cod.length < 4) return;
+    if(emCampo){
+      if(alvo.id === "buscaLivro"){ e.preventDefault(); ACOES.buscarDados(); }
+      return;
+    }
+    e.preventDefault();
+    await codigoDoLeitor(cod);
+    return;
+  }
+  if(e.key && e.key.length === 1) bufUSB += e.key;
+});
+
+async function codigoDoLeitor(cod){
+  if(tela === "cadastro"){
+    anotarCodigo(cod);
+    ctx.form.isbn = cod;
+    desenhar();
+    avisar("Código " + limparCodigo(cod) + " lido. Buscando...");
+    const d = await buscarBiblio({isbn: cod});
+    if(d) Object.assign(ctx.form, d);
+    desenhar();
+    avisar(d ? "Encontrado em " + d.fonte + ". Confira e salve."
+      : "Não achei nas bases. Complete à mão.", d ? "ok" : "erro");
+    return;
+  }
+  if(tela === "emprestimos" || tela === "novoEmprestimo"){
+    const a = acharExemplar(cod);
+    if(!a){ ir("vincular", {codigo: limparCodigo(cod), depois: "emprestimo"}); return; }
+    const emp = emprestimoAberto(a.registro);
+    if(emp){
+      const al = alunoPorId(emp.alunoId);
+      if(confirm(a.obra.titulo + "\nCom " + (al ? al.nome : "aluno removido") + ".\n\nRegistrar a devolução?")){
+        await guardar("emprestimos", Object.assign({}, emp, {devolucao: hoje()}));
+        await marcarExemplar(a.registro, false);
+        avisar("Devolução registrada: " + a.obra.titulo);
+      }
+      return;
+    }
+    ir("novoEmprestimo", {registro: a.registro});
+    avisar(a.obra.titulo + ". Agora escolha o aluno.");
+    return;
+  }
+  tratarCodigo(cod);
+}
 
 /* Câmera preparada para código de barras: resolução alta, foco contínuo e um
    pouco de zoom. Sem isso as barras finas do EAN-13 da contracapa não fecham. */
@@ -2733,6 +2831,7 @@ const ACOES = {
     avisar("Trazendo os dados e a capa...");
     Object.assign(r, await resolverCapa(r));
     r.categoria = await definirCategoria(r);
+    r.edicao = acharEdicao(r);
     Object.assign(ctx.form, r);
     ctx.resultados = null;
     desenhar();
@@ -2929,6 +3028,11 @@ const ACOES = {
   },
   tirarCapa: () => { ctx.form.capa = ""; ctx.form.capaUrl = ""; ctx.fotos = []; desenhar(); },
   tema: el => { aplicarTema(el.dataset.v); desenhar(); },
+  leitorUSB: () => {
+    try{ localStorage.setItem("maximus:usb", leitorUSBLigado() ? "off" : "on"); }catch(e){}
+    desenhar();
+    avisar(leitorUSBLigado() ? "Leitor USB ligado." : "Leitor USB desligado.");
+  },
   decoracao: () => {
     try{ localStorage.setItem("maximus:decor", decoracaoLigada() ? "off" : "on"); }catch(e){}
     decorar(); desenhar();
