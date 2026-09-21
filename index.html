@@ -30,6 +30,57 @@
   --erroFundo:#FBE9E6; --erroBorda:#D9A79E; --erroTexto:#7E2A20;
   --okFundo:#E7F3EC; --okBorda:#A8CBB7; --okTexto:#1D5638;
 }
+:root[data-tema="janeiro-branco"]{
+  --fundo:#0C0E11; --card:#161A1F; --card2:#1D222A; --topo:#080A0D;
+  --ouro:#9FC3E8; --ouro2:#DCEAF7; --ouroTopo:#DCEAF7; --softTopo:#93A0AE;
+  --texto:#F1F5F9; --soft:#93A0AE; --linha:#232A33; --forte:#3A4552;
+  --avisoFundo:rgba(159,195,232,.12); --avisoBorda:rgba(159,195,232,.45); --avisoTexto:#DDEAF6;
+}
+:root[data-tema="carnaval"]{
+  --fundo:#0C0714; --card:#17102340; --card:#171023; --card2:#1F1630; --topo:#080411;
+  --ouro:#F2B705; --ouro2:#FFE14D; --ouroTopo:#FFE14D; --softTopo:#A294B8;
+  --texto:#F6EFFA; --soft:#A294B8; --linha:#271B3A; --forte:#3E2C59;
+  --avisoFundo:rgba(242,183,5,.13); --avisoBorda:rgba(242,183,5,.5); --avisoTexto:#FBEDC2;
+  --disp:#5BD1A0; --empr:#8FB8FF; --res:#FF7BD0;
+}
+:root[data-tema="marco-mulher"]{
+  --fundo:#0F0814; --card:#1A1123; --card2:#23182E; --topo:#0A0510;
+  --ouro:#B667D6; --ouro2:#E7A8FF; --ouroTopo:#E7A8FF; --softTopo:#A492B0;
+  --texto:#F4EAF8; --soft:#A492B0; --linha:#2A1C36; --forte:#432E52;
+  --avisoFundo:rgba(182,103,214,.13); --avisoBorda:rgba(182,103,214,.5); --avisoTexto:#EED6F8;
+}
+:root[data-tema="maio-maes"]{
+  --fundo:#110A10; --card:#1D131C; --card2:#261A25; --topo:#0B060B;
+  --ouro:#E07A9B; --ouro2:#FFB3C8; --ouroTopo:#FFB3C8; --softTopo:#AE95A0;
+  --texto:#F8EDF1; --soft:#AE95A0; --linha:#2F1F2C; --forte:#4A3243;
+  --avisoFundo:rgba(224,122,155,.13); --avisoBorda:rgba(224,122,155,.5); --avisoTexto:#F8DCE5;
+}
+:root[data-tema="junho-festa"]{
+  --fundo:#120A06; --card:#1E130C; --card2:#281B11; --topo:#0C0604;
+  --ouro:#E2622E; --ouro2:#FFB366; --ouroTopo:#FFB366; --softTopo:#B09585;
+  --texto:#F8EDE3; --soft:#B09585; --linha:#312115; --forte:#4E3622;
+  --avisoFundo:rgba(226,98,46,.13); --avisoBorda:rgba(226,98,46,.5); --avisoTexto:#F9DCC4;
+}
+:root[data-tema="julho-ferias"]{
+  --fundo:#04100F; --card:#0C1C1B; --card2:#132724; --topo:#020A09;
+  --ouro:#22A6A0; --ouro2:#6FE3DA; --ouroTopo:#6FE3DA; --softTopo:#8AA6A3;
+  --texto:#E8F6F4; --soft:#8AA6A3; --linha:#14302D; --forte:#235049;
+  --avisoFundo:rgba(34,166,160,.13); --avisoBorda:rgba(34,166,160,.5); --avisoTexto:#CDEFEB;
+}
+:root[data-tema="consciencia-negra"]{
+  --fundo:#0A0705; --card:#17120E; --card2:#1F1813; --topo:#060403;
+  --ouro:#D9A441; --ouro2:#F2C86B; --ouroTopo:#F2C86B; --softTopo:#A2948A;
+  --texto:#F6F0E8; --soft:#A2948A; --linha:#2A211A; --forte:#463729;
+  --avisoFundo:rgba(217,164,65,.13); --avisoBorda:rgba(217,164,65,.5); --avisoTexto:#F4E3C3;
+  --disp:#5FBF7A; --atra:#D64545;
+}
+:root[data-tema="dezembro-natal"]{
+  --fundo:#07110A; --card:#0F1D13; --card2:#16281A; --topo:#040B06;
+  --ouro:#C9A227; --ouro2:#FFE08A; --ouroTopo:#FFE08A; --softTopo:#94A896;
+  --texto:#EFF6F0; --soft:#94A896; --linha:#173021; --forte:#264B33;
+  --avisoFundo:rgba(201,162,39,.13); --avisoBorda:rgba(201,162,39,.5); --avisoTexto:#F3E4BC;
+  --atra:#E35B5B; --disp:#6FCF8F;
+}
 :root[data-tema="setembro-amarelo"], :root[data-tema="maio-amarelo"]{
   --fundo:#100E07; --card:#1A170E; --card2:#221E13; --topo:#0B0A05;
   --ouro:#E3A900; --ouro2:#FFD452; --ouroTopo:#FFD452; --softTopo:#A39B84;
@@ -262,7 +313,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .btn:hover{filter:brightness(1.06)}
 }
 
+#decor{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+#decor span{position:absolute;top:-8%;opacity:.28;animation-name:cair;animation-timing-function:linear;
+ animation-iteration-count:infinite}
+@keyframes cair{from{transform:translateY(0) rotate(0)}to{transform:translateY(112vh) rotate(300deg)}}
+header,main,nav,#toast{position:relative;z-index:2}
+.faixaData{display:flex;align-items:center;gap:10px;background:var(--avisoFundo);border:1px solid var(--avisoBorda);
+ color:var(--avisoTexto);border-radius:10px;padding:11px 13px;font-size:13.5px;line-height:1.45;margin-bottom:12px}
+.faixaData .emoji{font-size:22px;line-height:1}
+
 @media print{
+  #decor,.faixaData{display:none!important}
   header,nav,.naoimprime,.marca{display:none!important}
   body{background:#fff;color:#111;padding:0;font-size:12px}
   .cartao{border:0;padding:0;margin:0;background:#fff;color:#111}
@@ -633,29 +694,68 @@ function erroAuth(e){
 const VERSAO = "2026.09.21";
 const TEMAS = [["escuro","Escuro"],["claro","Claro"],["azul","Azul"]];
 const CAMPANHAS = [
-  ["abril-azul","Abril Azul",4], ["maio-amarelo","Maio Amarelo",5], ["junho-vermelho","Junho Vermelho",6],
-  ["agosto-lilas","Agosto Lilás",8], ["setembro-amarelo","Setembro Amarelo",9],
-  ["outubro-rosa","Outubro Rosa",10], ["novembro-azul","Novembro Azul",11],
-  ["dezembro-vermelho","Dezembro Vermelho",12]
+  ["janeiro-branco","Janeiro Branco",1,"🤍","Janeiro Branco: cuidar da saúde mental é cuidar da gente."],
+  ["carnaval","Carnaval",2,"🎭","Fevereiro de Carnaval: leitura, música e alegria."],
+  ["marco-mulher","Março Mulher",3,"💜","8 de março: Dia Internacional da Mulher."],
+  ["abril-azul","Abril Azul",4,"💙","Abril Azul: conscientização sobre o autismo."],
+  ["maio-maes","Maio das Mães",5,"🌷","Maio: Dia do Trabalho e Dia das Mães."],
+  ["junho-festa","Festa Junina",6,"🎪","Junho: festas juninas e Dia dos Namorados."],
+  ["julho-ferias","Julho de Férias",7,"🏖️","Julho: férias escolares e Dia do Amigo."],
+  ["agosto-lilas","Agosto Lilás",8,"💜","Agosto Lilás: respeito e proteção às mulheres."],
+  ["setembro-amarelo","Setembro Amarelo",9,"💛","Setembro Amarelo e 7 de Setembro, Independência do Brasil."],
+  ["outubro-rosa","Outubro Rosa",10,"🎀","Outubro Rosa e Dia das Crianças, 12 de outubro."],
+  ["novembro-azul","Novembro Azul",11,"💙","Novembro Azul: cuidado com a saúde do homem."],
+  ["consciencia-negra","Consciência Negra",11,"✊🏿","20 de novembro: Dia Nacional de Zumbi e da Consciência Negra."],
+  ["dezembro-natal","Natal",12,"🎄","Dezembro: Natal, festas e fim de ano letivo."]
 ];
-const CORES_TOPO = {claro:"#0F1113", azul:"#060C16", "setembro-amarelo":"#0B0A05", "maio-amarelo":"#0B0A05",
-  "outubro-rosa":"#0C0509", "novembro-azul":"#040A14", "abril-azul":"#040A14", "agosto-lilas":"#0A0610",
-  "junho-vermelho":"#0C0505", "dezembro-vermelho":"#0C0505"};
+const CORES_TOPO = {claro:"#0F1113", azul:"#060C16", "janeiro-branco":"#0C0E11", carnaval:"#0C0714",
+  "marco-mulher":"#0F0814", "abril-azul":"#040A14", "maio-maes":"#110A10", "junho-festa":"#120A06",
+  "julho-ferias":"#04100F", "agosto-lilas":"#0A0610", "setembro-amarelo":"#0B0A05", "outubro-rosa":"#0C0509",
+  "novembro-azul":"#040A14", "consciencia-negra":"#0A0705", "dezembro-natal":"#07110A"};
 
-function campanhaDoMes(){
-  const m = new Date().getMonth() + 1;
+function temaDoMes(){
+  const d = new Date(), m = d.getMonth() + 1;
+  if(m === 11 && d.getDate() >= 18) return "consciencia-negra";
   const c = CAMPANHAS.find(x => x[2] === m);
   return c ? c[0] : "escuro";
 }
+const campanhaAtiva = () => CAMPANHAS.find(c => c[0] === (temaAtual() === "auto" ? temaDoMes() : temaAtual()));
+
 function temaAtual(){
   try{ return localStorage.getItem("maximus:tema") || "escuro"; }catch(e){ return "escuro"; }
 }
 function aplicarTema(t){
   try{ localStorage.setItem("maximus:tema", t); }catch(e){}
-  const real = t === "auto" ? campanhaDoMes() : t;
+  const real = t === "auto" ? temaDoMes() : t;
   document.documentElement.dataset.tema = real;
   const m = document.querySelector('meta[name="theme-color"]');
   if(m) m.setAttribute("content", CORES_TOPO[real] || "#0A0B0D");
+  decorar();
+}
+
+/* Enfeite da data: alguns símbolos descendo devagar ao fundo. Some quando o
+   aparelho pede menos animação e quando o usuário desliga. */
+function decoracaoLigada(){
+  try{ return localStorage.getItem("maximus:decor") !== "off"; }catch(e){ return true; }
+}
+function decorar(){
+  const antigo = document.getElementById("decor");
+  if(antigo) antigo.remove();
+  const c = campanhaAtiva();
+  if(!c || !decoracaoLigada()) return;
+  if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const d = document.createElement("div");
+  d.id = "decor";
+  let html = "";
+  for(let i = 0; i < 9; i++){
+    const esq = Math.round(Math.random() * 94);
+    const dur = 13 + Math.random() * 12;
+    const atraso = Math.random() * 14;
+    const tam = 16 + Math.random() * 14;
+    html += `<span style="left:${esq}%;animation-duration:${dur}s;animation-delay:-${atraso}s;font-size:${tam}px">${c[3]}</span>`;
+  }
+  d.innerHTML = html;
+  document.body.appendChild(d);
 }
 
 /* chips de tema, usados nos dois perfis */
@@ -663,11 +763,15 @@ const chipsTema = () => `
   <div class="rot" style="margin-bottom:8px">Versão ${VERSAO}</div>
   <div class="chips">${TEMAS.map(([v,n]) =>
     `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
-  <p class="rot" style="margin:10px 0 0">Campanhas do ano</p>
+  <p class="rot" style="margin:10px 0 0">Datas e campanhas do ano</p>
   <div class="chips">
     <button class="chip ${temaAtual()==="auto"?"on":""}" data-acao="tema" data-v="auto">Automático pelo mês</button>
-    ${CAMPANHAS.map(([v,n]) =>
-      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}
+    ${CAMPANHAS.map(([v,n,,e]) =>
+      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${e} ${n}</button>`).join("")}
+  </div>
+  <div class="chips">
+    <button class="chip ${decoracaoLigada()?"on":""}" data-acao="decoracao">
+      ${decoracaoLigada()?"Enfeites ligados":"Enfeites desligados"}</button>
   </div>`;
 
 /* ---------- avisos no celular ---------- */
@@ -1417,10 +1521,14 @@ function desenhar(){
 /* ================================================================
    Telas de acesso
    ================================================================ */
+const faixaData = () => {
+  const c = campanhaAtiva();
+  return c ? `<div class="faixaData"><span class="emoji">${c[3]}</span>${esc(c[4])}</div>` : "";
+};
 const blocoMarca = (escola) => `<div class="marca">
   ${marcaImg("width:120px;height:120px;object-fit:contain;display:block;margin:0 auto")}
   <div class="nome">MÁXIMUS</div><div class="fio"></div><div class="desc">Biblioteca Escolar</div>
-  ${escola ? `<div class="escolaMarca">${esc(escola)}</div>` : ""}</div>`;
+  ${escola ? `<div class="escolaMarca">${esc(escola)}</div>` : ""}</div>${faixaData()}`;
 
 TELAS.manutencao = () => `${blocoMarca()}
   <div class="cartao"><h2>Sistema em atualização</h2>
@@ -2821,6 +2929,10 @@ const ACOES = {
   },
   tirarCapa: () => { ctx.form.capa = ""; ctx.form.capaUrl = ""; ctx.fotos = []; desenhar(); },
   tema: el => { aplicarTema(el.dataset.v); desenhar(); },
+  decoracao: () => {
+    try{ localStorage.setItem("maximus:decor", decoracaoLigada() ? "off" : "on"); }catch(e){}
+    decorar(); desenhar();
+  },
   ativarAvisos: () => pedirNotificacao(),
   escolherLogo: () => $("#arqLogo").click(),
   tirarLogo: async () => { S.cfg.logo = ""; await salvarCfg(); desenhar(); avisar("Voltamos ao brasão Máximus."); },
@@ -3257,6 +3369,7 @@ document.addEventListener("change", async e => {
    ================================================================ */
 (async function(){
   aplicarTema(temaAtual());
+  decorar();
   const c = window.FIREBASE_CONFIG;
   if(!c || !c.apiKey || String(c.apiKey).includes("COLE_")){ tela = "semconfig"; desenhar(); return; }
   const conviteURL = new URLSearchParams(location.search).get("convite");
