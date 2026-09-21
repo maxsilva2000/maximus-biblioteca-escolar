@@ -65,6 +65,9 @@ header{background:var(--topo);padding:calc(12px + env(safe-area-inset-top)) 14px
 .marca .nome{font-family:Georgia,serif;font-size:27px;letter-spacing:.16em;color:var(--ouro);margin-top:10px;font-weight:600}
 .marca .fio{width:76px;height:1px;background:linear-gradient(90deg,transparent,var(--ouro),transparent);margin:9px auto}
 .marca .desc{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#F4F2ED}
+.marca .escolaMarca{font-family:Georgia,serif;font-size:15px;color:var(--ouro2);margin-top:14px;
+ padding-top:12px;border-top:1px solid rgba(201,162,39,.3);line-height:1.35}
+h1{overflow-wrap:anywhere}
 
 .cartao{background:var(--card);border:1px solid var(--linha);border-radius:10px;padding:14px;margin-bottom:12px}
 .ficha{position:relative;padding-left:22px}
@@ -262,7 +265,7 @@ function marcaImg(estilo, mono){
 /* ================================================================
    Firebase: contas e dados na nuvem
    ================================================================ */
-let FB = null, USUARIO = null, escutas = [], USUARIOS = [];
+let FB = null, USUARIO = null, escutas = [], USUARIOS = [], PANORAMA = null;
 const DEV_EMAILS = ["maximocontato1@gmail.com"];
 const WHATS = "5566996641404";
 const PAPEIS = {dev:"Desenvolvedor", admin:"Administrador", auxiliar:"Auxiliar", aluno:"Aluno", bloqueado:"Bloqueado"};
@@ -1205,12 +1208,13 @@ function svgBarras(valor, altura=36){
 /* ================================================================
    Navegação
    ================================================================ */
-const TITULOS = {inicio:()=>S.cfg.escola||"Máximus", cadastro:()=>"Cadastrar livro", acervo:()=>"Acervo",
+const curto = s => { s = String(s||""); return s.length > 34 ? s.slice(0, 32).trim() + "..." : s; };
+const TITULOS = {inicio:()=>curto(S.cfg.escola)||"Máximus", cadastro:()=>"Cadastrar livro", acervo:()=>"Acervo",
   obra:()=>"Ficha do livro", emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos",
   aluno:()=>"Ficha do aluno", relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiquetas",
   usuarios:()=>"Usuários", escolas:()=>"Escolas", abrindo:()=>"Máximus", entrar:()=>"Máximus",
   vincular:()=>"Vincular código",
-  catalogo:()=>S.cfg.escola||"Catálogo", meuspedidos:()=>"Meus pedidos", pedidos:()=>"Pedidos dos alunos", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
+  catalogo:()=>curto(S.cfg.escola)||"Catálogo", meuspedidos:()=>"Meus pedidos", pedidos:()=>"Pedidos dos alunos", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
 const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos",
   etiqueta:"acervo", usuarios:"ajustes", escolas:"ajustes", pedidos:"emprestimos", vincular:"emprestimos"};
 const ABAS_EQUIPE = [["inicio","🏠","Início"],["acervo","📚","Acervo"],["cadastro","📷","Cadastrar"],
@@ -1274,9 +1278,10 @@ function desenhar(){
 /* ================================================================
    Telas de acesso
    ================================================================ */
-const blocoMarca = () => `<div class="marca">
+const blocoMarca = (escola) => `<div class="marca">
   ${marcaImg("width:120px;height:120px;object-fit:contain;display:block;margin:0 auto")}
-  <div class="nome">MÁXIMUS</div><div class="fio"></div><div class="desc">Biblioteca Escolar</div></div>`;
+  <div class="nome">MÁXIMUS</div><div class="fio"></div><div class="desc">Biblioteca Escolar</div>
+  ${escola ? `<div class="escolaMarca">${esc(escola)}</div>` : ""}</div>`;
 
 TELAS.abrindo = () => `${blocoMarca()}
   <div class="cartao"><div class="vazio"><span class="giro"></span>Abrindo a biblioteca...</div></div>`;
@@ -1371,7 +1376,7 @@ TELAS.inicio = () => {
   S.obras.forEach(o => { const k=o.categoria||"Sem categoria"; cat[k]=(cat[k]||0)+o.exemplares.length; });
   const cats = Object.entries(cat).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  return `${blocoMarca()}
+  return `${blocoMarca(S.cfg.escola)}
   ${visitando() ? `<div class="aviso">Você está vendo o acervo de <b>${esc(S.cfg.escola||"outra escola")}</b> como desenvolvedor.
     <button class="btn mini sec" style="margin-top:8px" data-acao="voltarMinhaBiblioteca">Voltar à minha biblioteca</button></div>` : ""}
   <div class="cartao ficha">
@@ -1396,6 +1401,24 @@ TELAS.inicio = () => {
     <button class="tile" data-acao="aba" data-t="alunos"><span class="ico">🎓</span><span>Alunos</span></button>
     <button class="tile" data-acao="aba" data-t="relatorios"><span class="ico">📊</span><span>Relatórios</span></button>
   </div>
+  ${ehDev() ? `<div class="cartao"><h2>Escolas usando o Máximus</h2>
+    ${PANORAMA === null
+      ? `<div class="vazio"><span class="giro"></span>Somando os acervos...</div>`
+      : PANORAMA.length === 0
+        ? `<div class="vazio">Nenhuma escola com biblioteca aberta ainda.</div>`
+        : PANORAMA.map(e => `<div class="num">
+            <div style="min-width:0">
+              <div class="serif" style="font-size:15px">${esc(e.nome)}</div>
+              <div class="reg">${e.titulos} título(s) · ${e.alunos} aluno(s) · ${e.emprestimos} empréstimo(s)</div>
+            </div>
+            <button class="chip on" data-acao="abrirBiblioteca" data-e="${esc(e.id)}"
+              data-b="${esc(e.bibliotecaId)}" data-n="${esc(e.nome)}">Abrir</button>
+          </div>`).join("")}
+    <div class="linhab" style="margin-top:12px">
+      <button class="btn mini sec" data-acao="atualizarPanorama">Atualizar</button>
+      <button class="btn mini sec" data-acao="aba" data-t="escolas">Gerenciar escolas</button>
+    </div>
+  </div>` : ""}
   ${top.length?`<div class="cartao"><h2>Mais emprestados</h2>${top.map(([o,n])=>
     `<div class="num"><span class="serif" style="font-size:14.5px">${esc(o.titulo)}</span><b>${n}</b></div>`).join("")}</div>`:""}
   ${cats.length?`<div class="cartao"><h2>Categorias com mais livros</h2>${cats.map(([c,n])=>
@@ -1436,6 +1459,7 @@ TELAS.catalogo = () => {
   const meusAbertos = S.pedidos.filter(p => p.status === "aguardando");
 
   return `
+  ${blocoMarca(S.cfg.escola)}
   <div class="cartao ficha">
     <h2 style="margin-bottom:4px">Olá, ${esc((USUARIO.nome||"").split(" ")[0])}</h2>
     <div class="rot">${esc(USUARIO.escola||"")}${USUARIO.turma?" · "+esc(USUARIO.turma):""}${USUARIO.turno?" · "+esc(USUARIO.turno):""}</div>
@@ -1921,6 +1945,7 @@ TELAS.relatorios = () => {
       `<button class="chip ${tipo===v?"on":""}" data-acao="rel" data-v="${v}">${n}</button>`).join("")}</div>
     <div class="linhab naoimprime">
       <button class="btn mini" data-acao="exportar" ${linhas.length?"":"disabled"}>Exportar para Excel</button>
+      <button class="btn mini sec" data-acao="exportarCapas" ${linhas.length?"":"disabled"}>Exportar com capas</button>
       <button class="btn mini sec" data-acao="imprimir" ${linhas.length?"":"disabled"}>Imprimir ou salvar em PDF</button>
     </div>
     <div class="cartao"><h2>${nome}</h2>
@@ -2626,6 +2651,8 @@ const ACOES = {
 
   /* relatórios */
   rel: el => { ctx.tipo = el.dataset.v; desenhar(); },
+  exportarCapas: () => exportarComCapas(linhasRelatorio(ctx.tipo||"acervo"),
+    (RELS.find(r=>r[0]===(ctx.tipo||"acervo"))||[,"relatorio"])[1]),
   exportar: () => exportarPlanilha(linhasRelatorio(ctx.tipo||"acervo"), (RELS.find(r=>r[0]===(ctx.tipo||"acervo"))||[,"relatorio"])[1]),
 
   /* ajustes */
@@ -2685,12 +2712,13 @@ const ACOES = {
     }catch(e){ avisar("Não consegui desativar.", "erro"); }
   },
   recarregarEscolas: async () => { ctx.escolas = await listarEscolas(); desenhar(); },
+  atualizarPanorama: () => { PANORAMA = null; desenhar(); carregarPanorama(); },
   abrirBiblioteca: async el => {
     if(!ehDev()){ avisar("Só o desenvolvedor pode abrir outra biblioteca.", "erro"); return; }
     const e = (ctx.escolas || []).find(x => x.id === el.dataset.e);
-    bibAtiva = (e && e.bibliotecaId) || el.dataset.e;
+    bibAtiva = el.dataset.b || (e && e.bibliotecaId) || el.dataset.e;
     S.obras = []; S.alunos = []; S.emprestimos = []; S.pedidos = [];
-    avisar("Abrindo " + ((e && e.nome) || "a biblioteca") + "...");
+    avisar("Abrindo " + (el.dataset.n || (e && e.nome) || "a biblioteca") + "...");
     try{ await carregarTudo(); }catch(err){ avisar("Não consegui carregar essa biblioteca.", "erro"); }
     ir("inicio");
   },
@@ -2799,6 +2827,36 @@ document.addEventListener("input", e => {
 });
 
 /* ---------- painel de usuários ---------- */
+/* visão geral das escolas para o desenvolvedor: quantos livros, alunos e
+   empréstimos cada biblioteca já tem */
+async function carregarPanorama(){
+  if(!ehDev() || !FB) return;
+  try{
+    const escolas = (await listarEscolas()).filter(e => !e.padrao && e.bibliotecaId);
+    const conta = async (bib, col) => {
+      try{
+        const c = await FB.F.getCountFromServer(FB.F.collection(FB.db, "bibliotecas", bib, col));
+        return c.data().count;
+      }catch(e){
+        try{
+          const s = await FB.F.getDocs(FB.F.collection(FB.db, "bibliotecas", bib, col));
+          return s.size;
+        }catch(err){ return 0; }
+      }
+    };
+    const lista = [];
+    for(const e of escolas){
+      lista.push(Object.assign({}, e, {
+        titulos: await conta(e.bibliotecaId, "obras"),
+        alunos: await conta(e.bibliotecaId, "alunos"),
+        emprestimos: await conta(e.bibliotecaId, "emprestimos")
+      }));
+    }
+    PANORAMA = lista.sort((a,b) => b.titulos - a.titulos);
+    desenhar();
+  }catch(e){ PANORAMA = []; desenhar(); }
+}
+
 async function carregarUsuarios(){
   try{
     const col = FB.F.collection(FB.db, "usuarios");
@@ -2827,12 +2885,67 @@ function baixar(blob, nome){
   a.href = url; a.download = nome; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
 }
+/* Planilha do Excel não aceita imagem dentro da célula pelo gerador que usamos.
+   Quando a capa é um endereço da internet, entra a fórmula IMAGEM, que o Excel
+   365 e o Google Planilhas transformam em figura. Quando é foto tirada aqui,
+   a saída certa é o arquivo com capas, abaixo. */
+function exportarComCapas(linhas, nome){
+  if(!linhas.length){ avisar("Nada para exportar.", "erro"); return; }
+  const cols = Object.keys(linhas[0]);
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>${esc(nome)} — ${esc(S.cfg.escola||"")}</title><style>
+    body{font-family:Georgia,serif;margin:24px;color:#111}
+    h1{font-size:20px;margin:0 0 4px} .sub{color:#555;font-size:12px;margin-bottom:16px}
+    table{border-collapse:collapse;width:100%;font-family:system-ui,Arial,sans-serif;font-size:12px}
+    th{background:#1F2A20;color:#E7CE84;text-align:left;padding:7px 6px}
+    td{border-bottom:1px solid #ddd;padding:6px;vertical-align:top}
+    img{width:46px;height:66px;object-fit:cover;border-radius:3px}
+    tr{page-break-inside:avoid}
+  </style></head><body>
+  <h1>${esc(nome)}</h1>
+  <div class="sub">${esc(S.cfg.escola||"")} · ${linhas.length} registro(s) · ${brDate(hoje())}</div>
+  <table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>
+  ${linhas.map(l=>`<tr>${cols.map(c => c==="Capa"
+      ? `<td>${l[c] ? `<img src="${l[c]}" alt="">` : ""}</td>`
+      : `<td>${esc(l[c])}</td>`).join("")}</tr>`).join("")}
+  </tbody></table></body></html>`;
+  baixar(new Blob([html], {type: "text/html;charset=utf-8"}),
+    nome.replace(/\s+/g,"-").toLowerCase() + "-com-capas.html");
+  avisar("Arquivo com capas gerado. Abre no navegador e no Excel, e dá para imprimir em PDF.");
+}
+
 function exportarPlanilha(linhas, nome){
   if(!linhas.length){ avisar("Nada para exportar.", "erro"); return; }
-  linhas = linhas.map(l => { const c = Object.assign({}, l); delete c.Capa; return c; });
+  linhas = linhas.map(l => {
+    const c = Object.assign({}, l);
+    if(c.Capa && /^https?:/i.test(c.Capa)) c.Capa = c.Capa;   // vira fórmula depois
+    else delete c.Capa;
+    return c;
+  });
   if(window.XLSX){
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), nome.slice(0,28));
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    /* troca o endereço da capa pela fórmula de imagem do Excel */
+    const faixa = XLSX.utils.decode_range(ws["!ref"]);
+    let colCapa = -1;
+    for(let c = faixa.s.c; c <= faixa.e.c; c++){
+      const cab = ws[XLSX.utils.encode_cell({r: faixa.s.r, c})];
+      if(cab && cab.v === "Capa") colCapa = c;
+    }
+    if(colCapa >= 0){
+      for(let r = faixa.s.r + 1; r <= faixa.e.r; r++){
+        const ref = XLSX.utils.encode_cell({r, c: colCapa});
+        const cel = ws[ref];
+        if(cel && typeof cel.v === "string" && /^https?:/i.test(cel.v)){
+          ws[ref] = {t: "s", f: `IMAGE("${cel.v}")`, v: ""};
+        }
+      }
+      ws["!cols"] = ws["!cols"] || [];
+      ws["!cols"][colCapa] = {wch: 14};
+      ws["!rows"] = [];
+      for(let r = faixa.s.r + 1; r <= faixa.e.r; r++) ws["!rows"][r] = {hpt: 56};
+    }
+    XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28));
     XLSX.writeFile(wb, nome.replace(/\s+/g,"-").toLowerCase()+".xlsx");
   }else{
     const cols = Object.keys(linhas[0]);
@@ -2986,6 +3099,7 @@ document.addEventListener("change", async e => {
     if(tela==="entrar" || tela==="pendente" || tela==="abrindo") tela = ehAluno() ? "catalogo" : "inicio";
     desenhar();
     if(ehAdmin()) carregarUsuarios();
+    if(ehDev()) carregarPanorama();
     if("Notification" in window && Notification.permission === "default"){
       setTimeout(() => { try{ Notification.requestPermission(); }catch(e){} }, 2500);
     }
