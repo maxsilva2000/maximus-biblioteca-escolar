@@ -291,8 +291,11 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7
 const reg = n => String(n).padStart(5,"0");
 const soDigitos = s => String(s||"").replace(/\D/g,"");
 
-const CATEGORIAS = ["Romance","Literatura","Literatura brasileira","Literatura estrangeira","Ficção","Fantasia","Aventura",
-"Suspense","Mistério","Poesia","Biografia","História","Ciências","Educação","Infantojuvenil","Infantil","HQ/Gibis","Outros"];
+const CATEGORIAS = ["Romance","Literatura","Literatura brasileira","Literatura estrangeira","Ficção","Fantasia",
+"Aventura","Ação","Suspense","Mistério","Terror","Poesia","Contos","Crônicas","Biografia","Autobiografia",
+"História","Ciências","Educação","Didáticos e Acadêmicos","Leis e Legislação","Religião e Espiritualidade",
+"Filosofia","Saúde e Bem-estar","Artes","Esportes","Tecnologia","Revistas","Infantojuvenil","Infantil",
+"HQ/Gibis","Dicionários e Referência","Outros"];
 const NOME_STATUS = {disponivel:"Disponível", emprestado:"Emprestado", atrasado:"Atrasado", reservado:"Reservado"};
 
 /* ---------- marca ---------- */
@@ -317,6 +320,7 @@ function marcaImg(estilo, mono){
    Firebase: contas e dados na nuvem
    ================================================================ */
 let FB = null, USUARIO = null, escutas = [], USUARIOS = [], PANORAMA = null;
+let SISTEMA = {manutencao: false, mensagem: ""}, escutaSistema = null;
 const DEV_EMAILS = ["maximocontato1@gmail.com"];
 const WHATS = "5566996641404";
 const PAPEIS = {dev:"Desenvolvedor", admin:"Administrador", auxiliar:"Auxiliar", aluno:"Aluno", bloqueado:"Bloqueado"};
@@ -744,7 +748,22 @@ async function lerCodigo(arq){
   }catch(e){ return null; }
 }
 const MAPA_CAT = [
+  [/revista|magazine|peri[óo]dico|almanaque/i, "Revistas"],
+  [/dicion[áa]rio|enciclop[ée]dia|atlas|dictionary|encyclopedia|thesaurus/i, "Dicionários e Referência"],
   [/gibi|quadrinh|graphic novel|comic|mang[áa]|turma da m[oô]nica|hq\b/i, "HQ/Gibis"],
+  [/autobiograf|autobiograph/i, "Autobiografia"],
+  [/legisla|constitui[cç][ãa]o|c[óo]digo civil|c[óo]digo penal|estatuto|jur[íi]dic|direito|law\b/i, "Leis e Legislação"],
+  [/b[íi]blia|religi|espiritual|evang|cat[óo]lic|esp[íi]rita|umbanda|candombl|teolog|or[aá][cç][ãa]o|spiritual/i, "Religião e Espiritualidade"],
+  [/filosof|philosoph|[ée]tica|metaf[íi]sic/i, "Filosofia"],
+  [/cr[ôo]nica|chronicle/i, "Crônicas"],
+  [/contos|short stories|novelas curtas/i, "Contos"],
+  [/apostila|vestibular|enem|concurso|universit[áa]rio|acad[êe]mic|textbook|monografia|disserta[cç][ãa]o|tese/i, "Didáticos e Acadêmicos"],
+  [/espionagem|guerra|action|spy|a[cç][ãa]o e aventura/i, "Ação"],
+  [/terror|horror|assombr|sobrenatural/i, "Terror"],
+  [/sa[úu]de|bem-estar|nutri[cç][ãa]o|autoajuda|self-help|psicolog|medicin|health/i, "Saúde e Bem-estar"],
+  [/pintura|m[úu]sica|teatro|dan[cç]a|fotografia|cinema|art\b|music/i, "Artes"],
+  [/esporte|futebol|sport|atletismo|educa[cç][ãa]o f[íi]sica/i, "Esportes"],
+  [/tecnolog|inform[áa]tica|computa[cç][ãa]o|programa[cç][ãa]o|rob[óo]tica|technology|computing/i, "Tecnologia"],
   [/poesia|poem|poetry|sonet|cordel|vers[oa]s/i, "Poesia"],
   [/biografia|autobiografia|mem[óo]ri|biograph|memoir|di[áa]rio de/i, "Biografia"],
   [/dicion[áa]rio|gram[áa]tica|did[áa]tic|apostila|manual escolar|ensino fundamental|ensino m[ée]dio|pedagog|alfabetiza|education|teaching|licenciatura/i, "Educação"],
@@ -754,7 +773,7 @@ const MAPA_CAT = [
   [/infantojuvenil|juvenil|young adult|young readers|adolescen/i, "Infantojuvenil"],
   [/fantasia|fantasy|magia|bruxo|dragão|dragon|feiti[cç]/i, "Fantasia"],
   [/mist[ée]rio|mystery|detective|detetive|investiga|enigma|crime fiction/i, "Mistério"],
-  [/suspense|thriller|terror|horror|assombr/i, "Suspense"],
+  [/suspense|thriller/i, "Suspense"],
   [/aventura|adventure|pirata|expedi[cç]|viagem ao/i, "Aventura"],
   [/romance de amor|love story|romantic|paix[ãa]o|namoro/i, "Romance"],
   [/literatura brasileira|brazilian literature|machado de assis|clarice|jorge amado|drummond|guimarães rosa|graciliano/i, "Literatura brasileira"],
@@ -1264,6 +1283,7 @@ const TITULOS = {inicio:()=>curto(S.cfg.escola)||"Máximus", cadastro:()=>"Cadas
   obra:()=>"Ficha do livro", emprestimos:()=>"Empréstimos", novoEmprestimo:()=>"Novo empréstimo", alunos:()=>"Alunos",
   aluno:()=>"Ficha do aluno", relatorios:()=>"Relatórios", ajustes:()=>"Ajustes", etiqueta:()=>"Etiquetas",
   usuarios:()=>"Usuários", escolas:()=>"Escolas", abrindo:()=>"Máximus", entrar:()=>"Máximus",
+  manutencao:()=>"Máximus",
   vincular:()=>"Vincular código",
   catalogo:()=>curto(S.cfg.escola)||"Catálogo", meuspedidos:()=>"Meus pedidos", pedidos:()=>"Pedidos dos alunos", pendente:()=>"Máximus", semconfig:()=>"Configuração"};
 const VOLTA = {obra:"acervo", aluno:"alunos", cadastro:"inicio", ajustes:"inicio", novoEmprestimo:"emprestimos",
@@ -1309,6 +1329,16 @@ DEPOIS.entrar = () => {
 };
 
 function desenhar(){
+  if(SISTEMA.manutencao && !ehDev() && tela !== "entrar"){
+    document.body.classList.add("semnav");
+    $("#titulo").textContent = "Máximus";
+    $("#subtitulo").textContent = "Máximus · Biblioteca Escolar";
+    $("#marcaTopo").innerHTML = marcaImg("width:36px;height:36px;object-fit:contain");
+    $("#acaoTopo").hidden = true;
+    $("#app").innerHTML = TELAS.manutencao();
+    $("#nav").innerHTML = "";
+    return;
+  }
   const logado = !!USUARIO;
   document.body.classList.toggle("semnav", !logado);
   $("#titulo").textContent = (TITULOS[tela]||(()=>"Máximus"))();
@@ -1333,6 +1363,12 @@ const blocoMarca = (escola) => `<div class="marca">
   ${marcaImg("width:120px;height:120px;object-fit:contain;display:block;margin:0 auto")}
   <div class="nome">MÁXIMUS</div><div class="fio"></div><div class="desc">Biblioteca Escolar</div>
   ${escola ? `<div class="escolaMarca">${esc(escola)}</div>` : ""}</div>`;
+
+TELAS.manutencao = () => `${blocoMarca()}
+  <div class="cartao"><h2>Sistema em atualização</h2>
+    <p>${esc(SISTEMA.mensagem || "Estamos melhorando o Máximus Biblioteca Escolar. Volte em alguns minutos.")}</p>
+    <div class="linhab"><button class="btn mini sec" data-acao="recarregar">Tentar de novo</button></div>
+  </div>`;
 
 TELAS.abrindo = () => `${blocoMarca()}
   <div class="cartao"><div class="vazio"><span class="giro"></span>Abrindo a biblioteca...</div></div>`;
@@ -2079,6 +2115,21 @@ TELAS.ajustes = () => ehAluno() ? `
     <button class="btn mini" data-acao="salvarCfg">Salvar chave</button>
   </div>
 
+  ${ehDev() ? `<div class="cartao"><h2>Manutenção do sistema</h2>
+    <p class="rot" style="margin-top:0">Com a manutenção ligada, todos os usuários veem o aviso de atualização
+    e não conseguem usar o sistema. Você continua com acesso normal.</p>
+    ${SISTEMA.manutencao ? `<div class="aviso erro">Sistema em manutenção agora.</div>` : ""}
+    <div class="campo"><label>Mensagem que aparece para os usuários</label>
+      <input id="msgManutencao" value="${esc(SISTEMA.mensagem||"")}"
+        placeholder="Estamos subindo uma atualização. Voltamos em instantes."></div>
+    <div class="linhab">
+      ${SISTEMA.manutencao
+        ? `<button class="btn mini" data-acao="liberarSistema">Liberar o sistema</button>`
+        : `<button class="btn mini per" data-acao="travarSistema">Colocar em manutenção</button>`}
+      <button class="btn mini sec" data-acao="salvarMensagem">Salvar mensagem</button>
+    </div>
+  </div>` : ""}
+
   <div class="cartao"><h2>Importar acervo já catalogado</h2>
     <p class="rot" style="margin-top:0">Cada linha da planilha vira um título. A coluna Exemplares define quantos registros são gerados.</p>
     <input type="file" accept=".xlsx,.xls,.csv" id="arqPlanilha" hidden>
@@ -2764,6 +2815,18 @@ const ACOES = {
   },
   recarregarEscolas: async () => { ctx.escolas = await listarEscolas(); desenhar(); },
   atualizarPanorama: () => { PANORAMA = null; desenhar(); carregarPanorama(); },
+  travarSistema: async () => {
+    const msg = ($("#msgManutencao").value || "").trim();
+    if(!confirm("Colocar o sistema em manutenção? Os outros usuários param de conseguir usar.")) return;
+    if(await salvarSistema({manutencao: true, mensagem: msg})) avisar("Sistema em manutenção.");
+  },
+  liberarSistema: async () => {
+    if(await salvarSistema({manutencao: false})) avisar("Sistema liberado.");
+  },
+  salvarMensagem: async () => {
+    const msg = ($("#msgManutencao").value || "").trim();
+    if(await salvarSistema({mensagem: msg})) avisar("Mensagem salva.");
+  },
   abrirBiblioteca: async el => {
     if(!ehDev()){ avisar("Só o desenvolvedor pode abrir outra biblioteca.", "erro"); return; }
     const e = (ctx.escolas || []).find(x => x.id === el.dataset.e);
@@ -2880,6 +2943,25 @@ document.addEventListener("input", e => {
 /* ---------- painel de usuários ---------- */
 /* visão geral das escolas para o desenvolvedor: quantos livros, alunos e
    empréstimos cada biblioteca já tem */
+/* Modo manutenção: o desenvolvedor trava o sistema enquanto sobe uma
+   atualização, e todo mundo vê o aviso até ele liberar de novo. */
+function ouvirSistema(){
+  try{
+    if(escutaSistema) escutaSistema();
+    escutaSistema = FB.F.onSnapshot(FB.F.doc(FB.db, "sistema", "estado"), d => {
+      SISTEMA = d.exists() ? Object.assign({manutencao:false, mensagem:""}, d.data()) : {manutencao:false, mensagem:""};
+      desenhar();
+    });
+  }catch(e){}
+}
+async function salvarSistema(dados){
+  try{
+    await FB.F.setDoc(FB.F.doc(FB.db, "sistema", "estado"),
+      Object.assign({}, SISTEMA, dados, {atualizadoEm: new Date().toISOString(), por: USUARIO.uid}));
+    return true;
+  }catch(e){ avisar("Não consegui salvar. Confira as regras do Firestore.", "erro"); return false; }
+}
+
 async function carregarPanorama(){
   if(!ehDev() || !FB) return;
   try{
@@ -3128,6 +3210,8 @@ document.addEventListener("change", async e => {
   tela = "abrindo"; ctx = {}; desenhar();
   try{ await iniciarFirebase(); }
   catch(e){ avisar("Não consegui iniciar o Firebase. Confira o config.js.", "erro"); return; }
+
+  ouvirSistema();
 
   FB.A.onAuthStateChanged(FB.auth, async user => {
     if(!user){
