@@ -30,6 +30,36 @@
   --erroFundo:#FBE9E6; --erroBorda:#D9A79E; --erroTexto:#7E2A20;
   --okFundo:#E7F3EC; --okBorda:#A8CBB7; --okTexto:#1D5638;
 }
+:root[data-tema="setembro-amarelo"], :root[data-tema="maio-amarelo"]{
+  --fundo:#100E07; --card:#1A170E; --card2:#221E13; --topo:#0B0A05;
+  --ouro:#E3A900; --ouro2:#FFD452; --ouroTopo:#FFD452; --softTopo:#A39B84;
+  --texto:#F3EEDF; --soft:#A39B84; --linha:#2C2718; --forte:#443C25;
+  --avisoFundo:rgba(227,169,0,.12); --avisoBorda:rgba(227,169,0,.5); --avisoTexto:#F6E7BF;
+}
+:root[data-tema="outubro-rosa"]{
+  --fundo:#12080D; --card:#1D1017; --card2:#26161F; --topo:#0C0509;
+  --ouro:#E0558F; --ouro2:#FF9EC4; --ouroTopo:#FF9EC4; --softTopo:#AE94A0;
+  --texto:#F6E9EF; --soft:#AE94A0; --linha:#301C26; --forte:#4B2D3B;
+  --avisoFundo:rgba(224,85,143,.12); --avisoBorda:rgba(224,85,143,.5); --avisoTexto:#F8D8E5;
+}
+:root[data-tema="novembro-azul"], :root[data-tema="abril-azul"]{
+  --fundo:#060F1B; --card:#0E1B2C; --card2:#15243A; --topo:#040A14;
+  --ouro:#2E86DE; --ouro2:#79C0FF; --ouroTopo:#79C0FF; --softTopo:#8FA3BC;
+  --texto:#E6EEF8; --soft:#8FA3BC; --linha:#17283E; --forte:#274465;
+  --avisoFundo:rgba(46,134,222,.12); --avisoBorda:rgba(46,134,222,.5); --avisoTexto:#CFE4FA;
+}
+:root[data-tema="agosto-lilas"]{
+  --fundo:#100A16; --card:#1A1223; --card2:#22182E; --topo:#0A0610;
+  --ouro:#9B5DE5; --ouro2:#C79BFF; --ouroTopo:#C79BFF; --softTopo:#A295B4;
+  --texto:#F0E9F8; --soft:#A295B4; --linha:#2A1D38; --forte:#412E57;
+  --avisoFundo:rgba(155,93,229,.13); --avisoBorda:rgba(155,93,229,.5); --avisoTexto:#E4D4FB;
+}
+:root[data-tema="junho-vermelho"], :root[data-tema="dezembro-vermelho"]{
+  --fundo:#130809; --card:#1F0F11; --card2:#291518; --topo:#0C0505;
+  --ouro:#D64545; --ouro2:#FF8E8E; --ouroTopo:#FF8E8E; --softTopo:#B0938F;
+  --texto:#F7EAEA; --soft:#B0938F; --linha:#321B1D; --forte:#4E2B2D;
+  --avisoFundo:rgba(214,69,69,.13); --avisoBorda:rgba(214,69,69,.5); --avisoTexto:#F9D6D6;
+}
 :root[data-tema="azul"]{
   --fundo:#0A1220; --card:#111C2E; --card2:#182640; --topo:#060C16;
   --ouro:#C9A227; --ouro2:#E7CE84; --prata:#BFC4CC;
@@ -88,7 +118,7 @@ h1{overflow-wrap:anywhere}
 
 button{font:inherit}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
- background:linear-gradient(180deg,#E7CE84,#C9A227);color:#14150F;border:0;
+ background:var(--ouro2);color:#14150F;border:0;
  border-radius:9px;padding:14px 16px;font-size:15px;font-weight:700;cursor:pointer;width:100%;text-align:center}
 .btn:active{opacity:.85}
 .btn.sec{background:transparent;color:var(--ouro2);border:1.5px solid rgba(201,162,39,.65)}
@@ -133,7 +163,7 @@ nav button.on{color:var(--ouroTopo);font-weight:700}
 .chips::-webkit-scrollbar{display:none}
 .chip{white-space:nowrap;border:1px solid var(--forte);background:var(--card);border-radius:20px;padding:7px 12px;
  font-size:13px;color:var(--soft);cursor:pointer}
-.chip.on{background:linear-gradient(180deg,#E7CE84,#C9A227);color:#14150F;border-color:var(--ouro);font-weight:600}
+.chip.on{background:var(--ouro2);color:#14150F;border-color:var(--ouro);font-weight:600}
 
 .vazio{text-align:center;color:var(--soft);font-size:14px;padding:32px 16px;line-height:1.55}
 .aviso{background:var(--avisoFundo);border:1px solid var(--avisoBorda);border-radius:9px;padding:11px 13px;
@@ -600,17 +630,45 @@ function erroAuth(e){
 }
 
 /* ---------- tema ---------- */
+const VERSAO = "2026.09.21";
 const TEMAS = [["escuro","Escuro"],["claro","Claro"],["azul","Azul"]];
+const CAMPANHAS = [
+  ["abril-azul","Abril Azul",4], ["maio-amarelo","Maio Amarelo",5], ["junho-vermelho","Junho Vermelho",6],
+  ["agosto-lilas","Agosto Lilás",8], ["setembro-amarelo","Setembro Amarelo",9],
+  ["outubro-rosa","Outubro Rosa",10], ["novembro-azul","Novembro Azul",11],
+  ["dezembro-vermelho","Dezembro Vermelho",12]
+];
+const CORES_TOPO = {claro:"#0F1113", azul:"#060C16", "setembro-amarelo":"#0B0A05", "maio-amarelo":"#0B0A05",
+  "outubro-rosa":"#0C0509", "novembro-azul":"#040A14", "abril-azul":"#040A14", "agosto-lilas":"#0A0610",
+  "junho-vermelho":"#0C0505", "dezembro-vermelho":"#0C0505"};
+
+function campanhaDoMes(){
+  const m = new Date().getMonth() + 1;
+  const c = CAMPANHAS.find(x => x[2] === m);
+  return c ? c[0] : "escuro";
+}
 function temaAtual(){
   try{ return localStorage.getItem("maximus:tema") || "escuro"; }catch(e){ return "escuro"; }
 }
 function aplicarTema(t){
-  document.documentElement.dataset.tema = t;
-  const cor = t==="claro" ? "#0F1113" : t==="azul" ? "#060C16" : "#0A0B0D";
-  const m = document.querySelector('meta[name="theme-color"]');
-  if(m) m.setAttribute("content", cor);
   try{ localStorage.setItem("maximus:tema", t); }catch(e){}
+  const real = t === "auto" ? campanhaDoMes() : t;
+  document.documentElement.dataset.tema = real;
+  const m = document.querySelector('meta[name="theme-color"]');
+  if(m) m.setAttribute("content", CORES_TOPO[real] || "#0A0B0D");
 }
+
+/* chips de tema, usados nos dois perfis */
+const chipsTema = () => `
+  <div class="rot" style="margin-bottom:8px">Versão ${VERSAO}</div>
+  <div class="chips">${TEMAS.map(([v,n]) =>
+    `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
+  <p class="rot" style="margin:10px 0 0">Campanhas do ano</p>
+  <div class="chips">
+    <button class="chip ${temaAtual()==="auto"?"on":""}" data-acao="tema" data-v="auto">Automático pelo mês</button>
+    ${CAMPANHAS.map(([v,n]) =>
+      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}
+  </div>`;
 
 /* ---------- avisos no celular ---------- */
 let pedidosVistos = null;
@@ -2061,10 +2119,7 @@ TELAS.ajustes = () => ehAluno() ? `
     ${podeNotificar() ? `<div class="aviso ok">Avisos ativados neste aparelho.</div>`
       : `<button class="btn mini" data-acao="ativarAvisos">Ativar avisos</button>`}
   </div>
-  <div class="cartao"><h2>Aparência</h2>
-    <div class="chips">${TEMAS.map(([v,n])=>
-      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
-  </div>` : `
+  <div class="cartao"><h2>Aparência</h2>${chipsTema()}</div>` : `
   <div class="cartao"><h2>Sua conta</h2>
     <div class="num"><span class="rot">Nome</span><span class="dir">${esc(USUARIO.nome||"")}</span></div>
     <div class="num"><span class="rot">E-mail</span><span class="dir">${esc(USUARIO.email)}</span></div>
@@ -2087,10 +2142,7 @@ TELAS.ajustes = () => ehAluno() ? `
   </div>
 
   <div class="cartao"><h2>Aparência</h2>
-    <p class="rot" style="margin-top:0">Vale só para este aparelho.</p>
-    <div class="chips">${TEMAS.map(([v,n])=>
-      `<button class="chip ${temaAtual()===v?"on":""}" data-acao="tema" data-v="${v}">${n}</button>`).join("")}</div>
-  </div>
+    <p class="rot" style="margin-top:0">Vale só para este aparelho.</p>${chipsTema()}</div>
 
   <div class="cartao"><h2>Identificação</h2>
     <div class="campo"><label>Nome da biblioteca ou da escola</label><input data-cfg="escola" value="${esc(S.cfg.escola)}"></div>
@@ -2146,6 +2198,7 @@ TELAS.ajustes = () => ehAluno() ? `
   </div>
 
   <div class="cartao"><h2>Situação</h2>
+    <div class="num"><span class="rot">Versão do aplicativo</span><span class="dir reg">${VERSAO}</span></div>
     <div class="num"><span class="rot">Títulos</span><b>${S.obras.length}</b></div>
     <div class="num"><span class="rot">Exemplares</span><b>${S.obras.reduce((s,o)=>s+o.exemplares.length,0)}</b></div>
     <div class="num"><span class="rot">Próximo registro</span><b>${reg(S.cfg.proxReg)}</b></div>
