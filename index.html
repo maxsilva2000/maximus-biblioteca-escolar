@@ -1891,6 +1891,38 @@ TELAS.cadastro = () => {
   </div>`;
 };
 DEPOIS.cadastro = () => {
+  /* Campo de busca preparado para o leitor USB: ele digita em rajada e o
+     aplicativo procura sozinho, com ou sem Enter no fim. O campo também se
+     limpa antes de cada leitura nova, para os números não grudarem. */
+  const b = $("#buscaLivro");
+  if(b){
+    let ultima = 0, espera;
+    b.addEventListener("keydown", e => {
+      const agora = Date.now();
+      if(agora - ultima > 400 && b.dataset.usado === "1"){ b.value = ""; b.dataset.usado = ""; }
+      ultima = agora;
+      if(e.key === "Enter"){
+        e.preventDefault();
+        clearTimeout(espera);
+        b.dataset.usado = "1";
+        ACOES.buscarDados();
+      }
+    });
+    b.addEventListener("input", () => {
+      clearTimeout(espera);
+      const d = soDigitos(b.value);
+      if(d.length < 8) return;
+      espera = setTimeout(() => {
+        const atual = $("#buscaLivro");
+        if(atual && soDigitos(atual.value).length >= 8){
+          atual.dataset.usado = "1";
+          ACOES.buscarDados();
+        }
+      }, 250);
+    });
+    if(!ctx.form.titulo) setTimeout(() => { try{ b.focus(); }catch(e){} }, 120);
+  }
+
   const q = $("#qtd");
   q.addEventListener("input", () => {
     ctx.qtd = Math.max(1, Math.min(99, parseInt(q.value)||1));
@@ -2444,10 +2476,7 @@ document.addEventListener("keydown", async e => {
     const cod = bufUSB.trim();
     bufUSB = "";
     if(cod.length < 4) return;
-    if(emCampo){
-      if(alvo.id === "buscaLivro"){ e.preventDefault(); ACOES.buscarDados(); }
-      return;
-    }
+    if(emCampo) return;   /* dentro de um campo, quem cuida é o próprio campo */
     e.preventDefault();
     await codigoDoLeitor(cod);
     return;
@@ -2786,7 +2815,10 @@ const ACOES = {
       : "Não achei em nenhuma base. Tire uma foto da capa ou preencha à mão: o que você cadastrar fica salvo para as outras escolas.", d?"ok":"erro");
   }),
   buscarDados: async () => {
-    const txt = ($("#buscaLivro").value||"").trim(), s = $("#statusBusca"), temFoto = ctx.fotos.length>0;
+    const campo = $("#buscaLivro");
+    const txt = ((campo && campo.value) || "").trim();
+    if(campo) campo.value = "";
+    const s = $("#statusBusca"), temFoto = ctx.fotos.length>0;
     if(!txt && !temFoto){ avisar("Escaneie o código, tire uma foto da capa ou digite o título.", "erro"); return; }
     s.innerHTML = `<div class="aviso" style="margin-top:12px"><span class="giro"></span>Procurando nas bases de livros...</div>`;
 
