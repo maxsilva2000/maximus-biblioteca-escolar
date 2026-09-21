@@ -322,6 +322,33 @@ header,main,nav,#toast{position:relative;z-index:2}
  color:var(--avisoTexto);border-radius:10px;padding:11px 13px;font-size:13.5px;line-height:1.45;margin-bottom:12px}
 .faixaData .emoji{font-size:22px;line-height:1}
 
+/* ---------- ajustes finos de tela grande ---------- */
+@media (min-width: 1000px){
+  .marca{padding:30px 24px}
+  .marca img{width:104px!important;height:104px!important}
+  .marca .nome{font-size:30px}
+
+  /* os números viram cartões lado a lado, em vez de linhas largas e vazias */
+  .painel{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;padding:18px}
+  .painel:before{display:none}
+  .painel .num{flex-direction:column;align-items:flex-start;gap:6px;border:1px solid var(--linha);
+    border-radius:10px;padding:14px;background:var(--card2)}
+  .painel .num b{font-size:30px}
+  .painel .num .rot{font-size:12.5px}
+
+  .grade{grid-template-columns:repeat(4,1fr)}
+  .tile{min-height:104px}
+  .chips{flex-wrap:wrap;overflow:visible}
+  .faixaData{font-size:14px;padding:13px 16px}
+  .linhab{gap:10px}
+  .btn{width:auto;min-width:200px}
+  .btn.mini{min-width:0}
+  #app .cartao > .item{align-items:center}
+}
+@media (min-width: 1000px) and (max-width: 1240px){
+  .painel{grid-template-columns:repeat(3,1fr)}
+}
+
 @media print{
   #decor,.faixaData{display:none!important}
   header,nav,.naoimprime,.marca{display:none!important}
@@ -1136,17 +1163,17 @@ async function capaNoGoogle(isbn){
   }catch(e){ return ""; }
 }
 
-/* confere se a imagem existe de verdade antes de anunciar que achou a capa */
-function testarImagem(url){
+/* confere se a imagem existe mesmo, carregando de verdade no navegador */
+function testarImagem(url, ms){
   return new Promise(res => {
     if(!url) return res(false);
     const i = new Image();
-    let respondido = false;
-    const fim = v => { if(!respondido){ respondido = true; res(v); } };
+    let pronto = false;
+    const fim = v => { if(!pronto){ pronto = true; res(v); } };
     i.onload = () => fim(i.naturalWidth > 20 && i.naturalHeight > 20);
     i.onerror = () => fim(false);
     i.src = url;
-    setTimeout(() => fim(false), 6000);
+    setTimeout(() => fim(false), ms || 2500);
   });
 }
 
@@ -1156,83 +1183,22 @@ async function resolverCapa(o){
   if(o.capaUrl) urls.push(o.capaUrl);
   if(isbn){
     urls.push("https://covers.openlibrary.org/b/isbn/" + isbn + "-L.jpg?default=false");
-    urls.push("https://covers.openlibrary.org/b/isbn/" + isbn + "-M.jpg?default=false");
-    const g = await capaNoGoogle(isbn);
+    const g = await comTempo(capaNoGoogle(isbn), 4000);
     if(g) urls.push(g);
   }
-  let visivel = "";
-  for(const u of urls){
-    const d = await baixarImagem(u);
-    if(d) return {capa: d, capaUrl: u};
-    if(!visivel && await testarImagem(u)) visivel = u;
-  }
-  return {capa: "", capaUrl: visivel};
+  if(!urls.length) return {capa: "", capaUrl: ""};
+
+  /* todos os endereços são testados ao mesmo tempo; vale o primeiro da ordem
+     de preferência que realmente abrir */
+  const testes = await Promise.all(urls.map(u => testarImagem(u, 3000)));
+  const boa = urls.find((u, i) => testes[i]);
+  if(!boa) return {capa: "", capaUrl: ""};
+
+  /* com o endereço certo em mãos, tenta guardar uma cópia própria da imagem */
+  const copia = await comTempo(baixarImagem(boa), 4000);
+  return {capa: copia || "", capaUrl: boa};
 }
 
-/* Busca por nome do livro: devolve uma lista de opções, com capa, para escolher
-   a edição certa. É o caminho dos livros antigos, sem código de barras. */
-async function buscarLista(texto){
-  const achados = [];
-  const vistos = new Set();
-  const juntar = o => {
-    const k = semAcento(o.titulo).slice(0,40) + "|" + semAcento(o.autor).slice(0,20);
-    if(o.titulo && !vistos.has(k)){ vistos.add(k); achados.push(o); }
-  };
-
-  const [g, ol] = await Promise.all([
-    comTempo(fetch("https://www.googleapis.com/books/v1/volumes?maxResults=10&q=" + encodeURIComponent(texto)), 8000),
-    comTempo(fetch("https://openlibrary.org/search.json?limit=8&q=" + encodeURIComponent(texto)), 8000)
-  ]);
-
-  if(g && g.ok){
-    try{
-      const j = await g.json();
-      (j.items || []).forEach(it => {
-        const v = it.volumeInfo;
-        if(!v || !v.title) return;
-        juntar({
-          titulo: v.title + (v.subtitle ? ": " + v.subtitle : ""), subtitulo: v.subtitle || "",
-          autor: (v.authors||[]).join(", "),
-          editora: v.publisher || "", ano: (v.publishedDate||"").slice(0,4),
-          isbn: ((v.industryIdentifiers||[]).find(i=>i.type==="ISBN_13")||{}).identifier || "",
-          paginas: v.pageCount ? String(v.pageCount) : "", sinopse: (v.description||"").slice(0,600),
-          assuntos: (v.categories||[]).join(" "),
-          categoria: adivinharCategoria((v.categories||[]).join(" ") + " " + (v.description||"")),
-          capaUrl: v.imageLinks ? (v.imageLinks.thumbnail||"").replace("http://","https://") : "",
-          fonte: "Google Books"
-        });
-      });
-    }catch(e){}
-  }
-
-  if(ol && ol.ok){
-    try{
-      const j = await ol.json();
-      (j.docs || []).forEach(d => {
-        if(!d.title) return;
-        juntar({
-          titulo: d.title, autor: (d.author_name||[]).join(", "), editora: (d.publisher||[])[0] || "",
-          ano: d.first_publish_year ? String(d.first_publish_year) : "",
-          isbn: (d.isbn||[])[0] || "", paginas: d.number_of_pages_median ? String(d.number_of_pages_median) : "",
-          sinopse: "", assuntos: (d.subject||[]).slice(0,25).join(" "),
-          categoria: adivinharCategoria((d.subject||[]).slice(0,25).join(" ")),
-          capaUrl: d.cover_i ? "https://covers.openlibrary.org/b/id/" + d.cover_i + "-M.jpg" : "",
-          fonte: "Open Library"
-        });
-      });
-    }catch(e){}
-  }
-
-  return achados.slice(0, 12);
-}
-
-const IDIOMAS = {pt:"Português", por:"Português", en:"Inglês", eng:"Inglês", es:"Espanhol", spa:"Espanhol",
-  fr:"Francês", fre:"Francês", de:"Alemão", ger:"Alemão", it:"Italiano", ita:"Italiano", ja:"Japonês",
-  jpn:"Japonês", la:"Latim", lat:"Latim", ru:"Russo", rus:"Russo", zh:"Chinês", chi:"Chinês"};
-const nomeIdioma = c => IDIOMAS[String(c||"").toLowerCase()] || (c ? String(c).toUpperCase() : "");
-
-/* Rota direta do Open Library: pega edições que a busca por ISBN não devolve,
-   comum em livro estrangeiro e em edição antiga. */
 async function porOpenLibraryIsbn(isbn){
   const r = await fetch("https://openlibrary.org/isbn/" + isbn + ".json");
   if(!r.ok) return null;
@@ -1358,7 +1324,7 @@ async function buscarBiblio({isbn, texto}){
     }
     r.fonte = [...new Set(fontes)].join(" e ");
 
-    Object.assign(r, (await comTempo(resolverCapa(r), 8000)) || {});
+    Object.assign(r, (await comTempo(resolverCapa(r), 14000)) || {});
     r.categoria = (await comTempo(definirCategoria(r), 8000)) || r.categoria || "Outros";
     if(!r.sinopse) r.sinopse = (await comTempo(sinopseNoGoogle(limpo, r.titulo), 6000)) || "";
     r.edicao = acharEdicao(r);
@@ -1367,7 +1333,7 @@ async function buscarBiblio({isbn, texto}){
   if(texto){
     const r = await comTempo(porGoogleBooks(encodeURIComponent(texto), ""), 8000);
     if(r && r.titulo){
-      Object.assign(r, (await comTempo(resolverCapa(r), 7000)) || {});
+      Object.assign(r, (await comTempo(resolverCapa(r), 14000)) || {});
       r.categoria = (await comTempo(definirCategoria(r), 6000)) || r.categoria || "Outros";
       r.edicao = acharEdicao(r);
       return r;
@@ -1654,7 +1620,7 @@ TELAS.inicio = () => {
   return `${blocoMarca(S.cfg.escola)}
   ${visitando() ? `<div class="aviso">Você está vendo o acervo de <b>${esc(S.cfg.escola||"outra escola")}</b> como desenvolvedor.
     <button class="btn mini sec" style="margin-top:8px" data-acao="voltarMinhaBiblioteca">Voltar à minha biblioteca</button></div>` : ""}
-  <div class="cartao ficha">
+  <div class="cartao ficha painel">
     <div class="num"><span class="rot">📚 Total de livros</span><b>${t.livros}</b></div>
     <div class="num"><span class="rot">📗 Disponíveis</span><b>${t.disponiveis}</b></div>
     <div class="num"><span class="rot">📖 Emprestados</span><b>${t.emprestados}</b></div>
