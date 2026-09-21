@@ -3,7 +3,7 @@
    para o aplicativo abrir mesmo com a rede ruim e para as atualizações chegarem
    sem precisar limpar nada no celular. */
 
-const CACHE = "maximus-biblioteca-v3";
+const CACHE = "maximus-biblioteca-v5";
 const ARQUIVOS = ["./", "./index.html", "./config.js", "./manifest.webmanifest",
   "./marca.png", "./icone-192.png", "./icone-512.png"];
 
@@ -43,3 +43,4 @@ self.addEventListener("fetch", e => {
     }).catch(() => caches.match(e.request).then(r => r || caches.match("./index.html")))
   );
 });
+
