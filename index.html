@@ -940,13 +940,55 @@ function totais(){
 /* ================================================================
    Identificação de livros
    ================================================================ */
-async function lerCodigo(arq){
-  if(!("BarcodeDetector" in window)) return null;
+/* Safari e alguns navegadores não têm o leitor de código nativo. Nesses casos
+   entra o ZXing, carregado da internet na primeira vez e guardado depois. */
+let zxLeitor = null;
+async function carregarZXing(){
+  if(zxLeitor) return zxLeitor;
+  if(!window.ZXing){
+    await new Promise((ok, err) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
+      s.onload = ok;
+      s.onerror = () => err(new Error("sem internet para carregar o leitor"));
+      document.head.appendChild(s);
+    });
+  }
+  if(!window.ZXing) throw new Error("leitor indisponível");
+  zxLeitor = new window.ZXing.BrowserMultiFormatReader();
+  return zxLeitor;
+}
+const temLeitorNativo = () => "BarcodeDetector" in window;
+
+async function zxDoCanvas(canvas){
   try{
-    const d = new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]});
-    const bmp = arq instanceof Blob ? await createImageBitmap(arq) : arq;
-    const r = await d.detect(bmp);
-    return r.length ? r[0].rawValue : null;
+    const r = await carregarZXing();
+    const res = r.decodeFromCanvas(canvas);
+    return res && res.getText ? res.getText() : (res && res.text) || null;
+  }catch(e){ return null; }
+}
+async function zxDaImagem(dataUrl){
+  try{
+    const r = await carregarZXing();
+    const res = await r.decodeFromImageUrl(dataUrl);
+    return res && res.getText ? res.getText() : (res && res.text) || null;
+  }catch(e){ return null; }
+}
+
+async function lerCodigo(arq){
+  if(temLeitorNativo()){
+    try{
+      const d = new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]});
+      const bmp = arq instanceof Blob ? await createImageBitmap(arq) : arq;
+      const r = await d.detect(bmp);
+      if(r.length) return r[0].rawValue;
+    }catch(e){}
+  }
+  try{
+    const url = arq instanceof Blob ? await new Promise(ok => {
+      const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(arq);
+    }) : arq;
+    return await zxDaImagem(url);
   }catch(e){ return null; }
 }
 const MAPA_CAT = [
@@ -2367,7 +2409,8 @@ TELAS.ajustes = () => ehAluno() ? `
     <div class="num"><span class="rot">Títulos</span><b>${S.obras.length}</b></div>
     <div class="num"><span class="rot">Exemplares</span><b>${S.obras.reduce((s,o)=>s+o.exemplares.length,0)}</b></div>
     <div class="num"><span class="rot">Próximo registro</span><b>${reg(S.cfg.proxReg)}</b></div>
-    <div class="num"><span class="rot">Leitura de código pela câmera</span><span class="dir">${("BarcodeDetector" in window)?"disponível":"indisponível neste navegador"}</span></div>
+    <div class="num"><span class="rot">Leitura de código pela câmera</span>
+      <span class="dir">${temLeitorNativo() ? "leitor do próprio navegador" : "leitor alternativo, carregado da internet"}</span></div>
   </div>`;
 
 TELAS.escolas = () => {
@@ -2530,7 +2573,7 @@ async function ligarCamera(){
    que é onde o código costuma estar e onde a ampliação ajuda o decodificador */
 const recorte = document.createElement("canvas");
 async function procurarCodigo(det, v){
-  try{ const r = await det.detect(v); if(r.length) return r[0].rawValue; }catch(e){}
+  if(det){ try{ const r = await det.detect(v); if(r.length) return r[0].rawValue; }catch(e){} }
   const w = v.videoWidth, hh = v.videoHeight;
   if(!w) return null;
   const cw = Math.round(w*0.8), ch = Math.round(hh*0.5);
@@ -2538,22 +2581,34 @@ async function procurarCodigo(det, v){
   try{
     recorte.getContext("2d").drawImage(v, Math.round((w-cw)/2), Math.round((hh-ch)/2), cw, ch,
       0, 0, recorte.width, recorte.height);
-    const r = await det.detect(recorte);
-    if(r.length) return r[0].rawValue;
+    if(det){
+      const r = await det.detect(recorte);
+      if(r.length) return r[0].rawValue;
+    }else{
+      const t = await zxDoCanvas(recorte);
+      if(t) return t;
+    }
   }catch(e){}
   return null;
 }
 async function abrirScanner(cb){
-  if(!("BarcodeDetector" in window)){
-    avisar("Este navegador não lê códigos pela câmera. Abra pelo Chrome no Android, ou digite o número do registro na busca.", "erro");
-    return;
+  if(!temLeitorNativo()){
+    try{ await carregarZXing(); }
+    catch(e){
+      avisar("Não consegui preparar a leitura de código neste navegador. Digite o número na busca.", "erro");
+      return;
+    }
   }
   aoLer = cb;
   try{ stream = await ligarCamera(); }
   catch(e){ avisar("Não consegui abrir a câmera. Verifique a permissão do navegador.", "erro"); return; }
-  const v = $("#video"); v.srcObject = stream; await v.play();
+  const v = $("#video");
+  v.srcObject = stream;
+  v.setAttribute("playsinline", "");
+  try{ await v.play(); }catch(e){ avisar("Toque na tela para iniciar a câmera."); }
   $("#scanner").style.display = "flex"; lendo = true;
-  const det = new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]});
+  const det = temLeitorNativo()
+    ? new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]}) : null;
   const dica = $("#scanDica");
   if(dica) dica.textContent = "Aproxime até o código preencher a faixa";
   $("#btnLanterna").style.display = faixa ? "inline-flex" : "none";
@@ -2574,15 +2629,18 @@ async function abrirCaptura(aoFoto, aoCodigo){
   catch(e){ avisar("Não consegui abrir a câmera. Verifique a permissão do navegador.", "erro"); return; }
 
   const v = $("#video");
-  v.srcObject = stream; await v.play();
+  v.srcObject = stream;
+  v.setAttribute("playsinline", "");
+  try{ await v.play(); }catch(e){ avisar("Toque na tela para iniciar a câmera."); }
   $("#scanner").style.display = "flex";
   $("#mira").className = "mira capa";
   $("#btnManual").style.display = "inline-flex";
   lendo = true;
 
   const dica = $("#scanDica");
-  const det = ("BarcodeDetector" in window)
-    ? new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]}) : null;
+  let det = null;
+  if(temLeitorNativo()) det = new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_39","code_128","upc_a","itf"]});
+  else { try{ await carregarZXing(); }catch(e){} }
 
   const p = document.createElement("canvas");
   p.width = 160; p.height = 120;
@@ -2595,7 +2653,7 @@ async function abrirCaptura(aoFoto, aoCodigo){
     if(!lendo) return;
     quadro++;
 
-    if(det && quadro % 2 === 0){
+    if(quadro % 2 === 0){
       const val = await procurarCodigo(det, v);
       if(val){ fecharScanner(); aoCodigo(val); return; }
     }
