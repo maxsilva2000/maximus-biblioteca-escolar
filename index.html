@@ -349,6 +349,14 @@ header,main,nav,#toast{position:relative;z-index:2}
   .painel{grid-template-columns:repeat(3,1fr)}
 }
 
+@media (min-width: 680px) and (max-width: 999px){
+  .wrap{max-width:660px;padding:18px 20px}
+  .grade{grid-template-columns:repeat(2,1fr)}
+  .btn{width:100%}
+  .painel .num b{font-size:22px}
+  .marca img{width:104px!important;height:104px!important}
+}
+
 @media print{
   #decor,.faixaData{display:none!important}
   header,nav,.naoimprime,.marca{display:none!important}
@@ -406,7 +414,8 @@ const somarDias = (iso,d) => { const x=new Date(iso+"T12:00:00"); x.setDate(x.ge
 const brDate = iso => iso ? iso.split("-").reverse().join("/") : "";
 const diasAte = iso => Math.round((new Date(iso+"T12:00:00") - new Date(hoje()+"T12:00:00"))/86400000);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-const reg = n => String(n).padStart(5,"0");
+const inteiro = (v, padrao) => { const n = parseInt(v, 10); return (isNaN(n) || n < 1) ? padrao : n; };
+const reg = n => String(inteiro(n, 1)).padStart(5, "0");
 const soDigitos = s => String(s||"").replace(/\D/g,"");
 
 const CATEGORIAS = ["Romance","Literatura","Literatura brasileira","Literatura estrangeira","Ficção","Fantasia",
@@ -518,20 +527,27 @@ function ouvirDados(){
   if(ehAluno()){
     escutas.push(on(FB.F.query(refCol("pedidos"), FB.F.where("alunoUid","==",USUARIO.uid)),
       s => { S.pedidos = s.docs.map(d=>d.data()); conferirPedidos(); desenhar(); }));
-    escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); desenhar(); } }));
+    escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); sanearCfg(); desenhar(); } }));
     return;
   }
   escutas.push(on(refCol("pedidos"), s => { S.pedidos = s.docs.map(d=>d.data()); conferirPedidos(); desenhar(); }));
   escutas.push(on(refCol("alunos"), s => { S.alunos = s.docs.map(d=>d.data()); desenhar(); }));
   escutas.push(on(refCol("emprestimos"), s => { S.emprestimos = s.docs.map(d=>d.data()); desenhar(); }));
-  escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); desenhar(); } }));
+  escutas.push(on(refCfg(), d => { if(d.exists()){ S.cfg = Object.assign(S.cfg, d.data()); sanearCfg(); desenhar(); } }));
 }
 function pararEscutas(){ escutas.forEach(f => { try{ f(); }catch(e){} }); escutas = []; }
+
+function sanearCfg(){
+  S.cfg.proxReg = inteiro(S.cfg.proxReg, 1);
+  S.cfg.prazo = inteiro(S.cfg.prazo, 7);
+  if(typeof S.cfg.escola !== "string") S.cfg.escola = "Biblioteca escolar";
+}
 
 async function carregarTudo(){
   const d = await FB.F.getDoc(refCfg());
   if(d.exists()) S.cfg = Object.assign(S.cfg, d.data());
-  else if(daEquipe()) await salvarCfg();
+  sanearCfg();
+  if(!d.exists() && daEquipe()) await salvarCfg();
   S.obras = await todos("obras");
   if(daEquipe()){
     S.alunos = await todos("alunos");
@@ -1790,7 +1806,15 @@ TELAS.catalogo = () => {
           </div></div>`;
       }).join("")}</div>`;
 };
-DEPOIS.catalogo = () => buscaAoVivo("#qCatalogo","q");
+DEPOIS.catalogo = () => {
+  buscaAoVivo("#qCatalogo","q");
+  campoComLeitor("#qCatalogo", cod => {
+    const a = acharExemplar(cod);
+    ctx.q = a ? a.obra.titulo : cod;
+    desenhar();
+    if(!a) avisar("Esse código não está no acervo da escola.", "erro");
+  });
+};
 
 TELAS.meuspedidos = () => {
   const lista = [...S.pedidos].sort((a,b)=>b.criadoEm<a.criadoEm?-1:1);
@@ -1946,7 +1970,7 @@ DEPOIS.cadastro = () => {
 
   const q = $("#qtd");
   q.addEventListener("input", () => {
-    ctx.qtd = Math.max(1, Math.min(99, parseInt(q.value)||1));
+    ctx.qtd = Math.max(1, Math.min(99, inteiro(q.value, 1)));
     const p = S.cfg.proxReg;
     $("#aviReg").textContent = "Vai receber " + (ctx.qtd>1 ? "os registros "+reg(p)+" a "+reg(p+ctx.qtd-1) : "o registro "+reg(p)) + ".";
   });
@@ -2001,6 +2025,36 @@ TELAS.acervo = () => {
           <span class="carimbo c-${s}">${NOME_STATUS[s]}</span></button>`;
       }).join("")}</div>`;
 };
+/* Faz um campo de busca entender o leitor de código: ele digita em rajada e,
+   assim que para, o aplicativo age sozinho, com ou sem Enter no fim. */
+function campoComLeitor(idCampo, aoLer){
+  const c = $(idCampo);
+  if(!c) return;
+  let ultima = 0, espera;
+  c.addEventListener("keydown", e => {
+    const agora = Date.now();
+    if(agora - ultima > 400 && c.dataset.usado === "1"){ c.value = ""; c.dataset.usado = ""; }
+    ultima = agora;
+    if(e.key === "Enter"){
+      e.preventDefault();
+      clearTimeout(espera);
+      const v = c.value.trim();
+      if(v){ c.dataset.usado = "1"; aoLer(v); }
+    }
+  });
+  c.addEventListener("input", () => {
+    clearTimeout(espera);
+    if(soDigitos(c.value).length < 8) return;
+    espera = setTimeout(() => {
+      const atual = $(idCampo);
+      if(atual && soDigitos(atual.value).length >= 8){
+        atual.dataset.usado = "1";
+        aoLer(atual.value.trim());
+      }
+    }, 250);
+  });
+}
+
 function buscaAoVivo(idCampo, chave){
   const i = $(idCampo);
   if(!i) return;
@@ -2010,7 +2064,17 @@ function buscaAoVivo(idCampo, chave){
     ctx.t = setTimeout(()=>{ const p=i.selectionStart; desenhar(); const n=$(idCampo); if(n){n.focus(); n.setSelectionRange(p,p);} }, 240);
   });
 }
-DEPOIS.acervo = () => buscaAoVivo("#qAcervo","q");
+DEPOIS.acervo = () => {
+  buscaAoVivo("#qAcervo","q");
+  campoComLeitor("#qAcervo", cod => {
+    const a = acharExemplar(cod);
+    if(a){ ir("obra", {id:a.obra.id}); avisar(a.obra.titulo); return; }
+    ctx.q = cod; desenhar();
+    avisar("Código " + limparCodigo(cod) + " não está no acervo.", "erro");
+  });
+  const c = $("#qAcervo");
+  if(c && !ctx.q) setTimeout(() => { try{ c.focus(); }catch(e){} }, 120);
+};
 
 TELAS.obra = () => {
   const o = obra(ctx.id);
@@ -2173,7 +2237,20 @@ TELAS.novoEmprestimo = () => {
           <span class="chip">Emprestar</span></button>`).join("")}</div>
     <button class="btn sec" style="margin-top:10px" data-acao="voltarLivro">Voltar</button></div>`;
 };
-DEPOIS.novoEmprestimo = () => { buscaAoVivo("#qLivro","q"); buscaAoVivo("#qAluno","qa"); };
+DEPOIS.novoEmprestimo = () => {
+  buscaAoVivo("#qLivro","q");
+  buscaAoVivo("#qAluno","qa");
+  campoComLeitor("#qLivro", cod => {
+    const a = acharExemplar(cod);
+    if(!a){ ir("vincular", {codigo: limparCodigo(cod), depois: "emprestimo"}); return; }
+    const st = statusDe(a.registro);
+    if(st !== "disponivel"){ avisar(a.obra.titulo + " está " + NOME_STATUS[st].toLowerCase() + ".", "erro"); return; }
+    ctx.registro = a.registro; ctx.qa = ""; desenhar();
+    avisar(a.obra.titulo + ". Agora escolha o aluno.");
+  });
+  const l = $("#qLivro");
+  if(l && !ctx.q) setTimeout(() => { try{ l.focus(); }catch(e){} }, 120);
+};
 
 TELAS.alunos = () => {
   if(ctx.novo){
@@ -2453,6 +2530,8 @@ TELAS.usuarios = () => {
         ${!u.aprovado?`<button class="chip on" data-acao="aprovar" data-u="${u.uid}">Aprovar</button>`:""}
         ${u.aprovado&&u.papel==="auxiliar"?`<button class="chip" data-acao="promover" data-u="${u.uid}">Tornar admin</button>`:""}
         ${u.aprovado?`<button class="chip" data-acao="bloquear" data-u="${u.uid}">Bloquear</button>`:""}
+        ${ehDev()?`<button class="chip" data-acao="excluirUsuario" data-u="${u.uid}"
+          data-n="${esc(u.nome||u.email)}">Excluir</button>`:""}
       `:""}
     </div></div>`;
   return `
@@ -2926,16 +3005,19 @@ const ACOES = {
   salvarLivro: async () => {
     const f = ctx.form;
     if(!f.titulo.trim()){ avisar("Informe ao menos o título.", "erro"); return; }
+    sanearCfg();
+    const qtd = Math.max(1, Math.min(99, inteiro(ctx.qtd, 1)));
+    ctx.qtd = qtd;
     const exemplares = [];
-    for(let i=0;i<ctx.qtd;i++) exemplares.push({registro: reg(S.cfg.proxReg+i)});
+    for(let i=0;i<qtd;i++) exemplares.push({registro: reg(S.cfg.proxReg + i)});
     const codigos = [...new Set([...(f.codigos || []), limparCodigo(f.isbn)].filter(Boolean))];
     const nova = Object.assign({}, f, {id:uid(), criadoEm:hoje(), criadoPor:USUARIO.uid, exemplares, codigos,
       capa: ctx.fotos[0] ? ctx.fotos[0].thumb : f.capa});
-    const de = reg(S.cfg.proxReg), ate = reg(S.cfg.proxReg+ctx.qtd-1);
+    const de = reg(S.cfg.proxReg), ate = reg(S.cfg.proxReg + qtd - 1);
     try{
       await guardar("obras", nova);
       gravarCatalogo(nova);
-      S.cfg.proxReg += ctx.qtd;
+      S.cfg.proxReg = inteiro(S.cfg.proxReg, 1) + qtd;
       await salvarCfg();
       const serie = ctx.emSerie;
       const msg = ctx.qtd>1 ? `Cadastrado. Registros ${de} a ${ate}.` : `Cadastrado. Registro ${de}.`;
@@ -3121,7 +3203,9 @@ const ACOES = {
     if(!exigeAdmin()) return;
     document.querySelectorAll("[data-cfg]").forEach(i => {
       const k = i.dataset.cfg;
-      S.cfg[k] = (k==="prazo"||k==="proxReg") ? Math.max(1, parseInt(i.value)||1) : i.value;
+      if(k === "prazo") S.cfg.prazo = inteiro(i.value, 7);
+      else if(k === "proxReg") S.cfg.proxReg = inteiro(i.value, 1);
+      else S.cfg[k] = i.value;
     });
     await salvarCfg(); desenhar(); avisar("Ajustes salvos.");
   },
@@ -3243,6 +3327,15 @@ const ACOES = {
   aprovar: el => mudarUsuario(el.dataset.u, {aprovado:true}),
   promover: el => mudarUsuario(el.dataset.u, {papel:"admin"}),
   bloquear: el => { if(confirm("Bloquear o acesso desta pessoa?")) mudarUsuario(el.dataset.u, {aprovado:false}); },
+  excluirUsuario: async el => {
+    if(!ehDev()){ avisar("Só o desenvolvedor pode excluir cadastros.", "erro"); return; }
+    if(!confirm("Excluir o cadastro de " + (el.dataset.n || "") + "?\n\nA pessoa perde o acesso ao sistema.")) return;
+    try{
+      await FB.F.deleteDoc(FB.F.doc(FB.db, "usuarios", el.dataset.u));
+      avisar("Cadastro excluído.");
+      carregarUsuarios();
+    }catch(e){ avisar("Não consegui excluir. Confira as regras do Firestore.", "erro"); }
+  },
 
   /* aluno */
   solicitar: async el => {
