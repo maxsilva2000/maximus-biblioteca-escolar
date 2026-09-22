@@ -1522,13 +1522,39 @@ const anotarCodigo = cod => {
   ctx.form.codigos = [...new Set([...(ctx.form.codigos || []), c])];
 };
 
-function ir(t, dados){
+/* Guarda por onde a pessoa passou, para o botão Voltar do aplicativo e o do
+   navegador levarem à tela anterior, em vez de jogar tudo para o começo. */
+const historico = [];
+const ABAS_RAIZ = ["inicio", "catalogo", "acervo", "cadastro", "emprestimos", "alunos", "relatorios", "meuspedidos"];
+
+function ir(t, dados, semGuardar){
+  if(!semGuardar && tela && tela !== t) historico.push({tela, ctx});
+  if(historico.length > 40) historico.shift();
   tela = t;
   ctx = Object.assign({}, dados||{});
   if(t==="cadastro") ctx = Object.assign({form:formVazio(), fotos:[], qtd:1}, dados||{});
+  try{ history.pushState({n: historico.length}, ""); }catch(e){}
   window.scrollTo(0,0);
   desenhar();
 }
+
+function voltarTela(){
+  const ant = historico.pop();
+  if(ant){
+    tela = ant.tela;
+    ctx = ant.ctx || {};
+  }else{
+    tela = ehAluno() ? "catalogo" : "inicio";
+    ctx = {};
+  }
+  window.scrollTo(0,0);
+  desenhar();
+}
+
+window.addEventListener("popstate", () => {
+  if(!USUARIO) return;
+  voltarTela();
+});
 
 const TELAS = {}, DEPOIS = {};
 
@@ -1550,7 +1576,7 @@ DEPOIS.entrar = () => {
 };
 
 function desenhar(){
-  if(SISTEMA.manutencao && !ehDev() && tela !== "entrar"){
+  if(SISTEMA.manutencao && !ehDev() && tela !== "entrar" && USUARIO){
     document.body.classList.add("semnav");
     $("#titulo").textContent = "Máximus";
     $("#subtitulo").textContent = "Máximus · Biblioteca Escolar";
@@ -1567,8 +1593,13 @@ function desenhar(){
   $("#marcaTopo").innerHTML = marcaImg("width:36px;height:36px;object-fit:contain");
 
   const b = $("#acaoTopo");
-  if(logado && VOLTA[tela]){ b.hidden=false; b.textContent="Voltar"; b.dataset.acao="voltar"; }
+  if(logado && (VOLTA[tela] || (historico.length && !ABAS_RAIZ.includes(tela)))){
+    b.hidden=false; b.textContent="Voltar"; b.dataset.acao="voltar";
+  }
   else if(logado && (tela==="inicio" || tela==="catalogo")){ b.hidden=false; b.textContent="Ajustes"; b.dataset.acao="ajustes"; }
+  else if(logado && historico.length && ABAS_RAIZ.includes(tela)){
+    b.hidden=false; b.textContent="Voltar"; b.dataset.acao="voltar";
+  }
   else b.hidden = true;
 
   $("#app").innerHTML = (TELAS[tela]||(()=>""))();
@@ -1592,7 +1623,10 @@ const blocoMarca = (escola) => `<div class="marca">
 TELAS.manutencao = () => `${blocoMarca()}
   <div class="cartao"><h2>Sistema em atualização</h2>
     <p>${esc(SISTEMA.mensagem || "Estamos melhorando o Máximus Biblioteca Escolar. Volte em alguns minutos.")}</p>
-    <div class="linhab"><button class="btn mini sec" data-acao="recarregar">Tentar de novo</button></div>
+    <div class="linhab">
+      <button class="btn mini sec" data-acao="recarregar">Tentar de novo</button>
+      <button class="btn mini per" data-acao="sair">Sair da conta</button>
+    </div>
   </div>`;
 
 TELAS.abrindo = () => `${blocoMarca()}
@@ -2863,6 +2897,7 @@ const ACOES = {
   /* navegação */
   aba: el => {
     const t = el.dataset.t;
+    if(ABAS_RAIZ.includes(t)) historico.length = 0;
     ir(t);
     if(t==="usuarios"){ carregarUsuarios(); listarConvites().then(l => { ctx.convites = l; if(tela==="usuarios") desenhar(); }); }
     if(t==="escolas") listarEscolas().then(l => { ctx.escolas = l; if(tela==="escolas") desenhar(); });
@@ -2870,6 +2905,7 @@ const ACOES = {
   ajustes: () => ir("ajustes"),
   imprimir: () => window.print(),
   voltar: () => {
+    if(historico.length){ try{ history.back(); }catch(e){ voltarTela(); } return; }
     if(ehAluno()) return ir("catalogo");
     if(tela==="etiqueta") return ir(ctx.volta || "acervo", ctx.id ? {id:ctx.id} : {});
     return ir(VOLTA[tela] || "inicio", tela==="obra" ? {id:ctx.id} : {});
