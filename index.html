@@ -909,6 +909,19 @@ function statusDe(registro){
 }
 /* marca o exemplar na própria ficha do livro, para o aluno ver a disponibilidade
    sem precisar ler os empréstimos, que têm nomes de outros alunos */
+/* troca a capa de um livro já salvo no acervo */
+async function salvarCapa(capa, capaUrl){
+  const o = obra(ctx.id);
+  if(!o) return;
+  const nova = Object.assign({}, o, {capa: capa || "", capaUrl: capaUrl || ""});
+  try{
+    await guardar("obras", nova);
+    if(capa || capaUrl) gravarCatalogo(nova);
+    desenhar();
+    avisar(capa || capaUrl ? "Capa atualizada." : "Capa removida.");
+  }catch(e){ avisar("Não consegui salvar a capa.", "erro"); }
+}
+
 async function marcarExemplar(registro, emprestado){
   const o = obraDoRegistro(registro);
   if(!o) return;
@@ -1983,7 +1996,19 @@ TELAS.obra = () => {
   return `
   <div class="cartao ficha">
     <div style="display:flex;gap:14px">
-      ${o.capa||o.capaUrl ? `<img class="capa" style="width:118px;height:168px" src="${o.capa||o.capaUrl}" alt="">` : `<span class="capa" style="width:118px;height:168px">📕</span>`}
+      <div style="flex:0 0 auto;text-align:center">
+        ${o.capa||o.capaUrl
+          ? `<img class="capa" style="width:118px;height:168px" src="${o.capa||o.capaUrl}" alt=""
+               onerror="this.outerHTML='<span class=\'capa\' style=\'width:118px;height:168px\'>📕</span>'">`
+          : `<span class="capa" style="width:118px;height:168px">📕</span>`}
+        <input type="file" accept="image/*" id="arqCapaFicha" hidden>
+        <div class="linhab" style="justify-content:center;margin:8px 0 0;gap:6px">
+          <button class="chip" data-acao="capaFotoFicha">📷 Foto</button>
+          <button class="chip" data-acao="capaArquivoFicha">🖼️</button>
+          ${o.isbn ? `<button class="chip" data-acao="capaInternetFicha">🌐</button>` : ""}
+          ${(o.capa||o.capaUrl) ? `<button class="chip" data-acao="capaRemoverFicha">✕</button>` : ""}
+        </div>
+      </div>
       <div style="flex:1;min-width:0"><h2 style="margin-bottom:4px">${esc(o.titulo)}</h2>
         <div class="rot">${esc(o.autor||"Autor não informado")}</div></div>
     </div>
@@ -2918,6 +2943,24 @@ const ACOES = {
     await guardar("obras", o); await salvarCfg();
     desenhar(); avisar(`Exemplar ${r} acrescentado.`);
   },
+  capaFotoFicha: () => {
+    abrirCaptura(
+      async foto => {
+        const thumb = await reduzir(await (await fetch(foto)).blob(), 320, 0.72);
+        await salvarCapa(thumb, "");
+      },
+      async () => { avisar("Mire só na capa do livro, sem o código de barras.", "erro"); }
+    );
+  },
+  capaArquivoFicha: () => $("#arqCapaFicha").click(),
+  capaInternetFicha: async () => {
+    const o = obra(ctx.id);
+    avisar("Procurando a capa nas bases...");
+    const r = await comTempo(resolverCapa({isbn: o.isbn, capaUrl: o.capaUrl}), 14000);
+    if(r && (r.capa || r.capaUrl)) await salvarCapa(r.capa, r.capaUrl);
+    else avisar("Nenhuma base tem a capa deste livro. Fotografe o exemplar.", "erro");
+  },
+  capaRemoverFicha: async () => { await salvarCapa("", ""); },
   etiqueta: el => ir("etiqueta", {id:ctx.id, volta:"obra", registros:[el.dataset.r]}),
   etiquetasTodas: () => ir("etiqueta", {id:ctx.id, volta:"obra", registros: obra(ctx.id).exemplares.map(x=>x.registro)}),
   etiquetasAcervo: () => {
@@ -3407,6 +3450,14 @@ document.addEventListener("change", async e => {
       avisar(novos ? novos + " aluno(s) importado(s)" + (repetidos ? ", " + repetidos + " já estavam cadastrados." : ".")
         : "Nenhum aluno novo encontrado na planilha.", novos ? "ok" : "erro");
     }catch(err){ avisar(err.message || "Não consegui ler a planilha.", "erro"); }
+    t.value = "";
+  }
+
+  if(t.id==="arqCapaFicha" && t.files[0]){
+    try{
+      const thumb = await reduzir(t.files[0], 320, 0.72);
+      await salvarCapa(thumb, "");
+    }catch(err){ avisar("Não consegui ler a imagem.", "erro"); }
     t.value = "";
   }
 
