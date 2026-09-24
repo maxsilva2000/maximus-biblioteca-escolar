@@ -498,7 +498,7 @@ async function todos(loja){ const s = await FB.F.getDocs(refCol(loja)); return s
 async function limpar(loja){ const s = await FB.F.getDocs(refCol(loja)); await Promise.all(s.docs.map(d=>FB.F.deleteDoc(d.ref))); }
 
 const S = { obras:[], alunos:[], emprestimos:[], pedidos:[],
-  cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", logo:""} };
+  cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", geminiKey:"", logo:""} };
 let tela = "inicio", ctx = {};
 
 const refCfg = () => FB.F.doc(FB.db, "bibliotecas", bid(), "config", "config");
@@ -1211,6 +1211,25 @@ function acharEdicao(r){
   return "";
 }
 
+async function geminiLerPagina(base64Img, campos){
+  const key = (S.cfg.geminiKey||"").trim();
+  if(!key) throw new Error("Adicione a chave Gemini em Ajustes. Gratis em aistudio.google.com");
+  const prompt = "Pagina CIP/direitos do livro. Extraia so os campos visiveis: "
+    + campos.join(", ")
+    + '. Responda SOMENTE com JSON. Ex: {"autor":"Nome","paginas":"200","edicao":"2a edicao",'
+    + '"sinopse":"texto da sinopse","categoria":"Literatura"}. Omita campos nao visiveis.';
+  const r = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + key,
+    {method:"POST", headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:"image/jpeg",data:base64Img}}]}]})});
+  if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error("Gemini: "+((e.error&&e.error.message)||r.status)); }
+  const j = await r.json();
+  const txt = ((j.candidates||[])[0]||{content:{parts:[{text:""}]}}).content.parts[0].text||"";
+  const m = txt.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error("IA nao retornou dados. Tente foto mais nitida.");
+  return JSON.parse(m[0]);
+}
+
 async function sinopseNoGoogle(isbn, titulo){
   for(const q of ["isbn:" + isbn, encodeURIComponent(titulo || "")]){
     if(!q) continue;
@@ -1721,24 +1740,23 @@ TELAS.inicio = () => {
   const cat = {};
   S.obras.forEach(o => { const k=o.categoria||"Sem categoria"; cat[k]=(cat[k]||0)+o.exemplares.length; });
   const cats = Object.entries(cat).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const pendPed = S.pedidos.filter(p=>p.status==="aguardando").length;
+  const camp = campanhaAtiva();
 
-  return `${blocoMarca(S.cfg.escola)}
-  ${visitando() ? `<div class="aviso">Você está vendo o acervo de <b>${esc(S.cfg.escola||"outra escola")}</b> como desenvolvedor.
-    <button class="btn mini sec" style="margin-top:8px" data-acao="voltarMinhaBiblioteca">Voltar à minha biblioteca</button></div>` : ""}
-  <div class="cartao ficha painel">
-    <div class="num"><span class="rot">📚 Total de livros</span><b>${t.livros}</b></div>
-    <div class="num"><span class="rot">📗 Disponíveis</span><b>${t.disponiveis}</b></div>
-    <div class="num"><span class="rot">📖 Emprestados</span><b>${t.emprestados}</b></div>
-    <div class="num"><span class="rot">🔴 Atrasados</span><b>${t.atrasados}</b></div>
-    <div class="num"><span class="rot">🎓 Alunos cadastrados</span><b>${t.alunos}</b></div>
-  </div>
-  ${S.pedidos.filter(p=>p.status==="aguardando").length ? `<div class="aviso">
-    <b>${S.pedidos.filter(p=>p.status==="aguardando").length}</b> pedido(s) de aluno esperando.
-    <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="pedidos">Ver pedidos</button></div>`:""}
-  ${(atras.length||venc.length) ? `<div class="aviso">
-    ${atras.length?`<div><b>${atras.length}</b> ${atras.length===1?"livro atrasado":"livros atrasados"}.</div>`:""}
-    ${venc.length?`<div><b>${venc.length}</b> ${venc.length===1?"devolução":"devoluções"} nos próximos dias.</div>`:""}
-    <button class="btn mini sec" style="margin-top:8px" data-acao="aba" data-t="emprestimos">Ver devoluções</button></div>`:""}
+  return `
+  <!-- avisos urgentes: aparecem acima de tudo -->
+  ${SISTEMA.manutencao && ehDev() ? `<div class="aviso erro" style="margin-bottom:10px">Manutenção ativa agora.</div>` : ""}
+  ${visitando() ? `<div class="aviso" style="margin-bottom:10px">Vendo <b>${esc(S.cfg.escola||"")}</b> como dev.
+    <button class="btn mini sec" style="margin:6px 0 0" data-acao="voltarMinhaBiblioteca">Sair</button></div>` : ""}
+  ${(atras.length||venc.length) ? `<div class="aviso" style="margin-bottom:10px">
+    ${atras.length?`<b>${atras.length}</b> livro(s) atrasado(s). `:""}
+    ${venc.length?`<b>${venc.length}</b> devolução(ões) em 2 dias.`:""}
+    <button class="btn mini sec" style="margin:6px 0 0" data-acao="aba" data-t="emprestimos">Ver</button></div>`:""}
+  ${pendPed ? `<div class="aviso" style="margin-bottom:10px"><b>${pendPed}</b> pedido(s) de aluno.
+    <button class="btn mini sec" style="margin:6px 0 0" data-acao="aba" data-t="pedidos">Ver pedidos</button></div>`:""}
+  ${camp ? `<div class="faixaData" style="margin-bottom:10px"><span class="emoji">${camp[3]}</span>${esc(camp[4])}</div>` : ""}
+
+  <!-- atalhos: 2 colunas × 3 linhas -->
   <div class="grade">
     <button class="tile" data-acao="capturaAuto"><span class="ico">⚡</span><span>Modo rápido</span></button>
     <button class="tile" data-acao="aba" data-t="acervo"><span class="ico">🔎</span><span>Pesquisar livro</span></button>
@@ -1747,11 +1765,30 @@ TELAS.inicio = () => {
     <button class="tile" data-acao="aba" data-t="alunos"><span class="ico">🎓</span><span>Alunos</span></button>
     <button class="tile" data-acao="aba" data-t="relatorios"><span class="ico">📊</span><span>Relatórios</span></button>
   </div>
+
+  <!-- marca compacta + números -->
+  <div class="cartao" style="padding:14px 16px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      ${marcaImg("width:44px;height:44px;object-fit:contain;flex:0 0 auto")}
+      <div>
+        <div class="serif" style="font-size:16px;color:var(--ouro2)">MÁXIMUS</div>
+        <div style="font-size:12px;color:var(--soft)">${esc(S.cfg.escola||"Biblioteca Escolar")}</div>
+      </div>
+    </div>
+    <div class="painel" style="margin:0">
+      <div class="num"><span class="rot">📚 Livros</span><b>${t.livros}</b></div>
+      <div class="num"><span class="rot">📗 Disponíveis</span><b>${t.disponiveis}</b></div>
+      <div class="num"><span class="rot">📖 Emprestados</span><b>${t.emprestados}</b></div>
+      <div class="num"><span class="rot">🔴 Atrasados</span><b>${t.atrasados}</b></div>
+      <div class="num"><span class="rot">🎓 Alunos</span><b>${t.alunos}</b></div>
+    </div>
+  </div>
+
   ${ehDev() ? `<div class="cartao"><h2>Escolas usando o Máximus</h2>
     ${PANORAMA === null
-      ? `<div class="vazio"><span class="giro"></span>Somando os acervos...</div>`
+      ? `<div class="vazio"><span class="giro"></span>Carregando...</div>`
       : PANORAMA.length === 0
-        ? `<div class="vazio">Nenhuma escola com biblioteca aberta ainda.</div>`
+        ? `<div class="vazio">Nenhuma escola ainda.</div>`
         : PANORAMA.map(e => `<div class="num">
             <div style="min-width:0">
               <div class="serif" style="font-size:15px">${esc(e.nome)}</div>
@@ -1762,37 +1799,15 @@ TELAS.inicio = () => {
           </div>`).join("")}
     <div class="linhab" style="margin-top:12px">
       <button class="btn mini sec" data-acao="atualizarPanorama">Atualizar</button>
-      <button class="btn mini sec" data-acao="aba" data-t="escolas">Gerenciar escolas</button>
+      <button class="btn mini sec" data-acao="aba" data-t="escolas">Gerenciar</button>
     </div>
   </div>` : ""}
+
   ${top.length?`<div class="cartao"><h2>Mais emprestados</h2>${top.map(([o,n])=>
-    `<div class="num"><span class="serif" style="font-size:14.5px">${esc(o.titulo)}</span><b>${n}</b></div>`).join("")}</div>`:""}
+    `<div class="num"><span class="serif" style="font-size:14px">${esc(o.titulo)}</span><b>${n}</b></div>`).join("")}</div>`:""}
   ${cats.length?`<div class="cartao"><h2>Categorias com mais livros</h2>${cats.map(([c,n])=>
     `<div class="num"><span class="rot">${esc(c)}</span><b>${n}</b></div>`).join("")}</div>`:""}`;
 };
-
-TELAS.vincular = () => {
-  const q = semAcento(ctx.q||"");
-  const lista = S.obras.filter(o => !q || [o.titulo,o.autor,o.isbn].some(c=>semAcento(c).includes(q)))
-    .sort((a,b)=>semAcento(a.titulo)<semAcento(b.titulo)?-1:1).slice(0,40);
-  return `<div class="aviso">Li o código <b>${esc(ctx.codigo||"")}</b>, que não está neste acervo.
-    Se ele é de um exemplar que você já cadastrou, escolha o livro abaixo: da próxima vez ele será
-    reconhecido na hora.</div>
-  <input class="busca" id="qVincular" value="${esc(ctx.q||"")}" placeholder="Procurar o livro no acervo">
-  <div class="cartao">${lista.length===0?`<div class="vazio">Nada encontrado.</div>`:lista.map(o=>`
-    <button class="item" data-acao="confirmarVinculo" data-id="${o.id}">
-      ${o.capa||o.capaUrl?`<img class="capa" src="${o.capa||o.capaUrl}" alt="">`:`<span class="capa">📕</span>`}
-      <span style="flex:1;min-width:0">
-        <span class="serif" style="font-size:15.5px;display:block">${esc(o.titulo)}</span>
-        <span class="meta" style="display:block">${esc(o.autor||"")}</span>
-        <span class="reg">${o.exemplares.map(x=>x.registro).join(", ")}${o.isbn?" · ISBN "+esc(o.isbn):""}</span>
-      </span></button>`).join("")}</div>
-  <div class="linhab">
-    <button class="btn mini sec" data-acao="cadastrarDoCodigo">Não está no acervo, cadastrar agora</button>
-    <button class="btn mini sec" data-acao="aba" data-t="emprestimos">Cancelar</button>
-  </div>`;
-};
-DEPOIS.vincular = () => buscaAoVivo("#qVincular","q");
 
 TELAS.catalogo = () => {
   const q = semAcento(ctx.q||""), cat = ctx.cat||"";
@@ -1951,6 +1966,9 @@ TELAS.cadastro = () => {
              <button class="btn mini" data-acao="fotoDaCapa">📸 Fotografar a capa</button>
              <button class="btn mini sec" data-acao="fotoCapa">Escolher imagem</button>
            </div>`}
+      ${S.cfg.geminiKey ? `<button class="btn" data-acao="lerPaginaInterna"
+        style="width:100%;margin-top:10px">📖 Ler página interna (Gemini)</button>
+        <div class="rot" style="margin-top:4px">Fotografe a página CIP/direitos do livro. A IA preenche os campos faltantes.</div>` : ""}
     </div>
     ${campo("Título","titulo")}${campo("Autor","autor")}
     <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
@@ -2148,6 +2166,8 @@ TELAS.obra = () => {
           ${o.isbn ? `<button class="chip" data-acao="capaInternetFicha">🌐</button>` : ""}
           ${(o.capa||o.capaUrl) ? `<button class="chip" data-acao="capaRemoverFicha">✕</button>` : ""}
         </div>
+        ${S.cfg.geminiKey ? `<button class="chip" style="margin-top:8px;width:100%;text-align:center"
+          data-acao="lerPaginaFicha">📖 Ler página interna (Gemini)</button>` : ""}
       </div>
       <div style="flex:1;min-width:0"><h2 style="margin-bottom:4px">${esc(o.titulo)}</h2>
         <div class="rot">${esc(o.autor||"Autor não informado")}</div></div>
@@ -2481,7 +2501,13 @@ TELAS.ajustes = () => ehAluno() ? `
   <div class="cartao"><h2>Identificação por foto da capa</h2>
     <p class="rot" style="margin-top:0">O código de barras e a busca por título funcionam sem configuração.
     A leitura da capa por inteligência artificial precisa de uma chave da API da Anthropic.</p>
-    <div class="campo"><label>Chave da API</label><input data-cfg="apiKey" value="${esc(S.cfg.apiKey)}" placeholder="sk-ant-..."></div>
+    <div class="campo"><label>Chave da API Claude (foto da capa)</label>
+      <input data-cfg="apiKey" value="${esc(S.cfg.apiKey)}" placeholder="sk-ant-..."></div>
+    <div class="campo">
+      <label>Chave Google Gemini <span style="color:var(--disp);font-size:11px">GRATUITA</span></label>
+      <input data-cfg="geminiKey" value="${esc(S.cfg.geminiKey||'')}" placeholder="AIza... — gratis em aistudio.google.com">
+      <div class="rot" style="margin-top:4px">Fotografe a pagina CIP do livro para preencher autor, paginas, edicao e sinopse.</div>
+    </div>
     <button class="btn mini" data-acao="salvarCfg">Salvar chave</button>
   </div>
 
@@ -2914,6 +2940,27 @@ const ACOES = {
   /* cadastro */
   fotoCapa: () => $("#arqCapa").click(),
   capturarAgora: () => capturarAgora(),
+  lerPaginaInterna: () => {
+    abrirCaptura(async foto => {
+      avisar("Lendo com o Gemini...");
+      try{
+        const base64 = foto.split(",")[1];
+        const f = ctx.form;
+        const faltando = [];
+        if(!f.autor) faltando.push("autor");
+        if(!f.paginas) faltando.push("paginas");
+        if(!f.edicao) faltando.push("edicao");
+        if(!f.sinopse) faltando.push("sinopse");
+        if(!f.categoria||f.categoria==="Outros") faltando.push("categoria");
+        if(!faltando.length){ avisar("Todos os campos já estão preenchidos."); return; }
+        const dados = await geminiLerPagina(base64, faltando);
+        let qtd = 0;
+        faltando.forEach(c => { if(dados[c]){ f[c]=dados[c]; qtd++; }});
+        desenhar();
+        avisar(qtd ? qtd+" campo(s) preenchido(s). Confira antes de salvar." : "Não encontrei. Tente foto mais iluminada.", qtd?"ok":"erro");
+      }catch(e){ avisar(e.message, "erro"); }
+    }, async () => {});
+  },
   fotoDaCapa: () => {
     abrirCaptura(
       async foto => {
@@ -3137,6 +3184,27 @@ const ACOES = {
     else avisar("Nenhuma base tem a capa deste livro. Fotografe o exemplar.", "erro");
   },
   capaRemoverFicha: async () => { await salvarCapa("", ""); },
+  lerPaginaFicha: () => {
+    const o = obra(ctx.id); if(!o) return;
+    abrirCaptura(async foto => {
+      avisar("Lendo com o Gemini...");
+      try{
+        const base64 = foto.split(",")[1];
+        const faltando = [];
+        if(!o.autor) faltando.push("autor");
+        if(!o.paginas) faltando.push("paginas");
+        if(!o.edicao) faltando.push("edicao");
+        if(!o.sinopse) faltando.push("sinopse");
+        if(!o.categoria||o.categoria==="Outros") faltando.push("categoria");
+        if(!faltando.length){ avisar("Todos os campos já estão preenchidos."); return; }
+        const dados = await geminiLerPagina(base64, faltando);
+        const nova = Object.assign({}, o); let qtd = 0;
+        faltando.forEach(c => { if(dados[c]){ nova[c]=dados[c]; qtd++; }});
+        await guardar("obras", nova); gravarCatalogo(nova); desenhar();
+        avisar(qtd ? qtd+" campo(s) atualizado(s)." : "Não encontrei. Tente foto mais nítida.", qtd?"ok":"erro");
+      }catch(e){ avisar(e.message, "erro"); }
+    }, async () => {});
+  },
   etiqueta: el => ir("etiqueta", {id:ctx.id, volta:"obra", registros:[el.dataset.r]}),
   etiquetasTodas: () => ir("etiqueta", {id:ctx.id, volta:"obra", registros: obra(ctx.id).exemplares.map(x=>x.registro)}),
   etiquetasAcervo: () => {
