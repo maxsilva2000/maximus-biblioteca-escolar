@@ -1211,23 +1211,81 @@ function acharEdicao(r){
   return "";
 }
 
-async function geminiLerPagina(base64Img, campos){
+/* Gemini 1.5 Flash — gratuito, lê imagem e gera sinopse */
+async function geminiChamar(partes){
   const key = (S.cfg.geminiKey||"").trim();
-  if(!key) throw new Error("Adicione a chave Gemini em Ajustes. Gratis em aistudio.google.com");
-  const prompt = "Pagina CIP/direitos do livro. Extraia so os campos visiveis: "
-    + campos.join(", ")
-    + '. Responda SOMENTE com JSON. Ex: {"autor":"Nome","paginas":"200","edicao":"2a edicao",'
-    + '"sinopse":"texto da sinopse","categoria":"Literatura"}. Omita campos nao visiveis.';
+  if(!key) throw new Error("Adicione a chave Google Gemini em Ajustes (gratis em aistudio.google.com).");
+  const body = {contents:[{parts: partes}]};
   const r = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + key,
-    {method:"POST", headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:"image/jpeg",data:base64Img}}]}]})});
-  if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error("Gemini: "+((e.error&&e.error.message)||r.status)); }
+    "https://generativelanguage.googleapis.com/v1beta/models/" + (S.cfg.geminiModelo||"gemini-3.1-flash-lite") + ":generateContent?key=" + key,
+    {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if(!r.ok){
+    const e = await r.json().catch(()=>({}));
+    const msg = (e.error && e.error.message) || ("status " + r.status);
+    throw new Error("Gemini: " + msg + ". Verifique a chave em Ajustes.");
+  }
   const j = await r.json();
-  const txt = ((j.candidates||[])[0]||{content:{parts:[{text:""}]}}).content.parts[0].text||"";
+  return (((j.candidates||[])[0]||{}).content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].text)||"";
+}
+
+/* Lê a capa ou página CIP do livro e preenche os campos faltantes.
+   Se não encontrar sinopse na imagem, gera uma com IA. */
+async function geminiLerPagina(base64Img, campos, contexto){
+  /* reduz antes de enviar — foto de câmera pode ter 10 MB */
+  let imgData = base64Img;
+  try{
+    const blob = await (await fetch("data:image/jpeg;base64," + base64Img)).blob();
+    const menor = await reduzir(blob, 1200, 0.82);
+    imgData = menor.split(",")[1];
+  }catch(e){}
+
+  const semSinopse = campos.filter(c => c !== "sinopse");
+  const querSinopse = campos.includes("sinopse");
+
+  const prompt = "Esta imagem pode ser a CAPA ou a pagina de direitos autorais (CIP) de um livro. "
+    + "Leia o texto visivel e extraia os campos: "
+    + (semSinopse.length ? semSinopse.join(", ") + ". " : "")
+    + (querSinopse ? "Se houver sinopse/resumo visivel, inclua no campo 'sinopse'. " : "")
+    + "Retorne SOMENTE um JSON valido. "
+    + 'Ex: {"autor":"Ana Maria Machado","paginas":"128","edicao":"3a edicao","categoria":"Infantil","sinopse":"Texto."} '
+    + "Omita campos que nao estao visiveis na imagem.";
+
+  const txt = await geminiChamar([
+    {text: prompt},
+    {inline_data: {mime_type:"image/jpeg", data:imgData}}
+  ]);
+
   const m = txt.match(/\{[\s\S]*\}/);
-  if(!m) throw new Error("IA nao retornou dados. Tente foto mais nitida.");
-  return JSON.parse(m[0]);
+  let resultado = {};
+  if(m){
+    try{ resultado = JSON.parse(m[0]); }catch(e){}
+  }
+
+  /* se queria sinopse mas não veio na imagem, gera com IA */
+  if(querSinopse && !resultado.sinopse){
+    const titulo = (contexto&&contexto.titulo) || resultado.titulo || "";
+    const autor = resultado.autor || (contexto&&contexto.autor) || "";
+    const cat = resultado.categoria || (contexto&&contexto.categoria) || "";
+    if(titulo){
+      try{
+        const s = await geminiGerarSinopse(titulo, autor, "", cat);
+        if(s){ resultado.sinopse = s; resultado._gerada = true; }
+      }catch(e){}
+    }
+  }
+  return resultado;
+}
+
+/* Gera sinopse usando título, autor, editora e categoria — sem foto */
+async function geminiGerarSinopse(titulo, autor, editora, categoria){
+  if(!titulo) throw new Error("Preencha pelo menos o titulo antes de gerar a sinopse.");
+  const prompt = "Escreva uma sinopse de 3 a 4 frases para o livro \""
+    + titulo + "\""
+    + (autor ? " de " + autor : "")
+    + (editora ? ", editora " + editora : "")
+    + (categoria ? ", genero " + categoria : "")
+    + ". Descreva o tema de forma atraente. Portugues brasileiro. SOMENTE o texto da sinopse, sem titulo nem marcacao.";
+  return (await geminiChamar([{text:prompt}])||"").trim();
 }
 
 async function sinopseNoGoogle(isbn, titulo){
@@ -1967,7 +2025,7 @@ TELAS.cadastro = () => {
              <button class="btn mini sec" data-acao="fotoCapa">Escolher imagem</button>
            </div>`}
       ${S.cfg.geminiKey ? `<button class="btn" data-acao="lerPaginaInterna"
-        style="width:100%;margin-top:10px">📖 Ler página interna (Gemini)</button>
+        style="width:100%;margin-top:10px">📷 Fotografar capa ou página interna</button>
         <div class="rot" style="margin-top:4px">Fotografe a página CIP/direitos do livro. A IA preenche os campos faltantes.</div>` : ""}
     </div>
     ${campo("Título","titulo")}${campo("Autor","autor")}
@@ -1976,6 +2034,8 @@ TELAS.cadastro = () => {
     <div class="campo"><label>Categoria</label><select data-campo="categoria"><option value="">Selecione</option>
       ${CATEGORIAS.map(c=>`<option ${f.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
     <div class="dupla">${campo("Idioma","idioma",'placeholder="Português"')}${campo("Páginas","paginas")}</div>
+    ${S.cfg.geminiKey && !f.sinopse ? `<button class="btn mini sec" data-acao="gerarSinopseCadastro"
+      style="margin-bottom:6px">✨ Gerar sinopse com IA</button>` : ""}
     <div class="campo"><label>Sinopse</label><textarea data-campo="sinopse">${esc(f.sinopse)}</textarea></div>
   </div>
   <div class="cartao"><h2>3. Onde fica e quantos exemplares</h2>
@@ -2173,7 +2233,11 @@ TELAS.obra = () => {
         <div class="rot">${esc(o.autor||"Autor não informado")}</div></div>
     </div>
     <div style="margin-top:12px">${linhas.map(([k,v])=>`<div class="num"><span class="rot">${k}</span><span class="dir">${esc(v)}</span></div>`).join("")}</div>
-    ${o.sinopse?`<p style="font-size:14px;margin-bottom:0">${esc(o.sinopse)}</p>`:""}
+    ${o.sinopse
+      ? `<p style="font-size:14px;margin-bottom:0">${esc(o.sinopse)}</p>`
+      : S.cfg.geminiKey
+        ? `<button class="btn mini sec" data-acao="gerarSinopseFicha">✨ Gerar sinopse com IA</button>`
+        : ""}
   </div>
   <div class="cartao"><h2>Exemplares</h2>
     ${o.exemplares.map(x=>{
@@ -2506,7 +2570,14 @@ TELAS.ajustes = () => ehAluno() ? `
     <div class="campo">
       <label>Chave Google Gemini <span style="color:var(--disp);font-size:11px">GRATUITA</span></label>
       <input data-cfg="geminiKey" value="${esc(S.cfg.geminiKey||'')}" placeholder="AIza... — gratis em aistudio.google.com">
-      <div class="rot" style="margin-top:4px">Fotografe a pagina CIP do livro para preencher autor, paginas, edicao e sinopse.</div>
+    </div>
+    <div class="campo">
+      <label>Modelo Gemini</label>
+      <select data-cfg="geminiModelo">
+        ${["gemini-3.1-flash-lite","gemini-3.1-pro-preview","gemini-2.5-flash"].map(m=>
+          `<option ${(S.cfg.geminiModelo||"gemini-3.1-flash-lite")===m?"selected":""}>${m}</option>`).join("")}
+      </select>
+      <div class="rot" style="margin-top:4px">Use <b>gemini-3.1-flash-lite</b> no plano gratuito. Se aparecer erro, tente outro da lista.</div>
     </div>
     <button class="btn mini" data-acao="salvarCfg">Salvar chave</button>
   </div>
@@ -2940,6 +3011,16 @@ const ACOES = {
   /* cadastro */
   fotoCapa: () => $("#arqCapa").click(),
   capturarAgora: () => capturarAgora(),
+  gerarSinopseCadastro: async () => {
+    const f = ctx.form;
+    avisar("Gerando sinopse com o Gemini...");
+    try{
+      const s = await geminiGerarSinopse(f.titulo, f.autor, f.editora, f.categoria);
+      f.sinopse = s;
+      desenhar();
+      avisar("Sinopse gerada. Confira antes de salvar.", "ok");
+    }catch(e){ avisar(e.message, "erro"); }
+  },
   lerPaginaInterna: () => {
     abrirCaptura(async foto => {
       avisar("Lendo com o Gemini...");
@@ -2957,7 +3038,8 @@ const ACOES = {
         let qtd = 0;
         faltando.forEach(c => { if(dados[c]){ f[c]=dados[c]; qtd++; }});
         desenhar();
-        avisar(qtd ? qtd+" campo(s) preenchido(s). Confira antes de salvar." : "Não encontrei. Tente foto mais iluminada.", qtd?"ok":"erro");
+        const gerou = dados._gerada;
+        avisar(qtd ? qtd+" campo(s) preenchido(s)"+(gerou?" (sinopse gerada pela IA)":"")+". Confira antes de salvar." : "Não encontrei dados. Verifique a chave Gemini ou tente foto mais nítida.", qtd?"ok":"erro");
       }catch(e){ avisar(e.message, "erro"); }
     }, async () => {});
   },
@@ -3184,6 +3266,18 @@ const ACOES = {
     else avisar("Nenhuma base tem a capa deste livro. Fotografe o exemplar.", "erro");
   },
   capaRemoverFicha: async () => { await salvarCapa("", ""); },
+  gerarSinopseFicha: async () => {
+    const o = obra(ctx.id); if(!o) return;
+    avisar("Gerando sinopse com o Gemini...");
+    try{
+      const s = await geminiGerarSinopse(o.titulo, o.autor, o.editora, o.categoria);
+      const nova = Object.assign({}, o, {sinopse: s});
+      await guardar("obras", nova);
+      gravarCatalogo(nova);
+      desenhar();
+      avisar("Sinopse gerada.", "ok");
+    }catch(e){ avisar(e.message, "erro"); }
+  },
   lerPaginaFicha: () => {
     const o = obra(ctx.id); if(!o) return;
     abrirCaptura(async foto => {
