@@ -498,7 +498,7 @@ async function todos(loja){ const s = await FB.F.getDocs(refCol(loja)); return s
 async function limpar(loja){ const s = await FB.F.getDocs(refCol(loja)); await Promise.all(s.docs.map(d=>FB.F.deleteDoc(d.ref))); }
 
 const S = { obras:[], alunos:[], emprestimos:[], pedidos:[],
-  cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", geminiKey:"", logo:""} };
+  cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", geminiKey:"", geminiModelo:"gemini-3.1-flash-lite", groqKey:"", openrouterKey:"", logo:""} };
 let tela = "inicio", ctx = {};
 
 const refCfg = () => FB.F.doc(FB.db, "bibliotecas", bid(), "config", "config");
@@ -1211,61 +1211,157 @@ function acharEdicao(r){
   return "";
 }
 
-/* Gemini 1.5 Flash — gratuito, lê imagem e gera sinopse */
-async function geminiChamar(partes){
-  const key = (S.cfg.geminiKey||"").trim();
-  if(!key) throw new Error("Adicione a chave Google Gemini em Ajustes (gratis em aistudio.google.com).");
-  const body = {contents:[{parts: partes}]};
-  const r = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/" + (S.cfg.geminiModelo||"gemini-3.1-flash-lite") + ":generateContent?key=" + key,
-    {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+/* IA gratuita: Gemini, Groq e OpenRouter — tenta na ordem que tiver chave.
+   Groq: chave grátis em console.groq.com
+   OpenRouter: chave grátis em openrouter.ai (modelos marcados com :free)
+   Gemini: chave grátis em aistudio.google.com */
+
+/* ---------- Groq (Llama 3.2 Vision) ---------- */
+async function groqChamar(mensagens, modelo){
+  const key = (S.cfg.groqKey||"").trim();
+  if(!key) throw new Error("sem-chave");
+  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer " + key},
+    body:JSON.stringify({
+      model: modelo || "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: mensagens,
+      max_tokens: 1200,
+      temperature: 0.3
+    })});
   if(!r.ok){
     const e = await r.json().catch(()=>({}));
-    const msg = (e.error && e.error.message) || ("status " + r.status);
-    throw new Error("Gemini: " + msg + ". Verifique a chave em Ajustes.");
+    throw new Error("Groq: " + ((e.error&&e.error.message)||r.status));
+  }
+  const j = await r.json();
+  return j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||"";
+}
+
+/* ---------- OpenRouter (modelos gratuitos) ---------- */
+async function openrouterChamar(mensagens, modelo){
+  const key = (S.cfg.openrouterKey||"").trim();
+  if(!key) throw new Error("sem-chave");
+  const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer " + key,
+      "HTTP-Referer":"https://maxsilva2000.github.io/maximus-biblioteca-escolar/",
+      "X-Title":"Maximus Biblioteca Escolar"
+    },
+    body:JSON.stringify({
+      model: modelo || "meta-llama/llama-3.2-11b-vision-instruct:free",
+      messages: mensagens,
+      max_tokens: 1200
+    })});
+  if(!r.ok){
+    const e = await r.json().catch(()=>({}));
+    throw new Error("OpenRouter: " + ((e.error&&e.error.message)||r.status));
+  }
+  const j = await r.json();
+  return j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||"";
+}
+
+/* ---------- Gemini ---------- */
+async function geminiChamar(partes){
+  const key = (S.cfg.geminiKey||"").trim();
+  if(!key) throw new Error("sem-chave");
+  const r = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    + (S.cfg.geminiModelo||"gemini-3.1-flash-lite") + ":generateContent?key=" + key,
+    {method:"POST", headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({contents:[{parts:partes}]})});
+  if(!r.ok){
+    const e = await r.json().catch(()=>({}));
+    throw new Error("Gemini: "+((e.error&&e.error.message)||r.status));
   }
   const j = await r.json();
   return (((j.candidates||[])[0]||{}).content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].text)||"";
 }
 
-/* Lê a capa ou página CIP do livro e preenche os campos faltantes.
-   Se não encontrar sinopse na imagem, gera uma com IA. */
+/* ---------- Roteador: tenta os provedores com chave configurada ---------- */
+async function iaSoTexto(prompt){
+  const erros = [];
+  if(S.cfg.groqKey){
+    try{
+      return await groqChamar([{role:"user",content:prompt}]);
+    }catch(e){ if(e.message!=="sem-chave") erros.push("Groq: "+e.message); }
+  }
+  if(S.cfg.geminiKey){
+    try{
+      return await geminiChamar([{text:prompt}]);
+    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
+  }
+  if(S.cfg.openrouterKey){
+    try{
+      return await openrouterChamar([{role:"user",content:prompt}]);
+    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
+  }
+  if(!erros.length) throw new Error("Configure ao menos uma chave de IA em Ajustes (Groq, Gemini ou OpenRouter).");
+  throw new Error(erros.join(" | "));
+}
+
+async function iaComImagem(prompt, base64Img){
+  const erros = [];
+  /* Groq com Llama 4 Scout (visão + grátis) */
+  if(S.cfg.groqKey){
+    try{
+      return await groqChamar([{role:"user",content:[
+        {type:"text",text:prompt},
+        {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}
+      ]}]);
+    }catch(e){ if(e.message!=="sem-chave") erros.push("Groq: "+e.message); }
+  }
+  /* Gemini */
+  if(S.cfg.geminiKey){
+    try{
+      return await geminiChamar([
+        {text:prompt},
+        {inline_data:{mime_type:"image/jpeg",data:base64Img}}
+      ]);
+    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
+  }
+  /* OpenRouter com Llama Vision :free */
+  if(S.cfg.openrouterKey){
+    try{
+      return await openrouterChamar([{role:"user",content:[
+        {type:"text",text:prompt},
+        {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}
+      ]}], "meta-llama/llama-3.2-11b-vision-instruct:free");
+    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
+  }
+  if(!erros.length) throw new Error("Configure ao menos uma chave de IA em Ajustes (Groq, Gemini ou OpenRouter).");
+  throw new Error(erros.join(" | "));
+}
+
+/* Lê a página interna ou capa e preenche campos */
 async function geminiLerPagina(base64Img, campos, contexto){
-  /* reduz antes de enviar — foto de câmera pode ter 10 MB */
   let imgData = base64Img;
   try{
-    const blob = await (await fetch("data:image/jpeg;base64," + base64Img)).blob();
+    const blob = await (await fetch("data:image/jpeg;base64,"+base64Img)).blob();
     const menor = await reduzir(blob, 1200, 0.82);
     imgData = menor.split(",")[1];
   }catch(e){}
 
-  const semSinopse = campos.filter(c => c !== "sinopse");
-  const querSinopse = campos.includes("sinopse");
-
   const prompt = "Esta imagem pode ser a CAPA ou a pagina de direitos autorais (CIP) de um livro. "
-    + "Leia o texto visivel e extraia os campos: "
-    + (semSinopse.length ? semSinopse.join(", ") + ". " : "")
-    + (querSinopse ? "Se houver sinopse/resumo visivel, inclua no campo 'sinopse'. " : "")
-    + "Retorne SOMENTE um JSON valido. "
+    + "Leia o texto visivel e extraia em JSON: "
+    + campos.filter(c=>c!=="sinopse").join(", ")
+    + (campos.includes("sinopse") ? ", sinopse (se houver resumo visivel)" : "")
+    + ". Retorne SOMENTE JSON valido, sem markdown. "
     + 'Ex: {"autor":"Ana Maria Machado","paginas":"128","edicao":"3a edicao","categoria":"Infantil","sinopse":"Texto."} '
-    + "Omita campos que nao estao visiveis na imagem.";
+    + "Omita campos nao visiveis.";
 
-  const txt = await geminiChamar([
-    {text: prompt},
-    {inline_data: {mime_type:"image/jpeg", data:imgData}}
-  ]);
-
-  const m = txt.match(/\{[\s\S]*\}/);
   let resultado = {};
-  if(m){
-    try{ resultado = JSON.parse(m[0]); }catch(e){}
-  }
+  try{
+    const txt = await iaComImagem(prompt, imgData);
+    const m = txt.match(/\{[\s\S]*\}/);
+    if(m) resultado = JSON.parse(m[0]);
+  }catch(e){ throw e; }
 
-  /* se queria sinopse mas não veio na imagem, gera com IA */
-  if(querSinopse && !resultado.sinopse){
-    const titulo = (contexto&&contexto.titulo) || resultado.titulo || "";
-    const autor = resultado.autor || (contexto&&contexto.autor) || "";
-    const cat = resultado.categoria || (contexto&&contexto.categoria) || "";
+  if(campos.includes("sinopse") && !resultado.sinopse){
+    const titulo = (contexto&&contexto.titulo)||resultado.titulo||"";
+    const autor = resultado.autor||(contexto&&contexto.autor)||"";
+    const cat = resultado.categoria||(contexto&&contexto.categoria)||"";
     if(titulo){
       try{
         const s = await geminiGerarSinopse(titulo, autor, "", cat);
@@ -1276,16 +1372,14 @@ async function geminiLerPagina(base64Img, campos, contexto){
   return resultado;
 }
 
-/* Gera sinopse usando título, autor, editora e categoria — sem foto */
+/* Gera sinopse sem foto */
 async function geminiGerarSinopse(titulo, autor, editora, categoria){
-  if(!titulo) throw new Error("Preencha pelo menos o titulo antes de gerar a sinopse.");
-  const prompt = "Escreva uma sinopse de 3 a 4 frases para o livro \""
+  if(!titulo) throw new Error("Preencha o titulo antes de gerar a sinopse.");
+  const prompt = "Escreva uma sinopse de 3 a 4 frases em portugues para o livro \""
     + titulo + "\""
-    + (autor ? " de " + autor : "")
-    + (editora ? ", editora " + editora : "")
-    + (categoria ? ", genero " + categoria : "")
-    + ". Descreva o tema de forma atraente. Portugues brasileiro. SOMENTE o texto da sinopse, sem titulo nem marcacao.";
-  return (await geminiChamar([{text:prompt}])||"").trim();
+    + (autor?" de "+autor:"")+(editora?", editora "+editora:"")+(categoria?", genero "+categoria:"")
+    + ". Estilo de contracapa, sem spoilers. Responda SOMENTE com o texto da sinopse.";
+  return (await iaSoTexto(prompt)||"").trim();
 }
 
 async function sinopseNoGoogle(isbn, titulo){
@@ -2565,20 +2659,23 @@ TELAS.ajustes = () => ehAluno() ? `
   <div class="cartao"><h2>Identificação por foto da capa</h2>
     <p class="rot" style="margin-top:0">O código de barras e a busca por título funcionam sem configuração.
     A leitura da capa por inteligência artificial precisa de uma chave da API da Anthropic.</p>
-    <div class="campo"><label>Chave da API Claude (foto da capa)</label>
-      <input data-cfg="apiKey" value="${esc(S.cfg.apiKey)}" placeholder="sk-ant-..."></div>
-    <div class="campo">
-      <label>Chave Google Gemini <span style="color:var(--disp);font-size:11px">GRATUITA</span></label>
-      <input data-cfg="geminiKey" value="${esc(S.cfg.geminiKey||'')}" placeholder="AIza... — gratis em aistudio.google.com">
+    <div class="cartao" style="padding:14px;margin-bottom:0"><h2 style="margin-bottom:12px">Inteligência Artificial</h2>
+    <p class="rot" style="margin:0 0 10px">Configure ao menos uma. A IA preenche autor, páginas, edição, sinopse e categoria fotografando a página interna do livro.</p>
+    <div class="campo"><label>🟢 Groq <span style="color:var(--disp);font-size:11px">GRATUITO — recomendado</span></label>
+      <input data-cfg="groqKey" value="${esc(S.cfg.groqKey||'')}" placeholder="gsk_... — grátis em console.groq.com">
     </div>
-    <div class="campo">
-      <label>Modelo Gemini</label>
-      <select data-cfg="geminiModelo">
+    <div class="campo"><label>🔵 Google Gemini <span style="color:var(--disp);font-size:11px">GRATUITO</span></label>
+      <input data-cfg="geminiKey" value="${esc(S.cfg.geminiKey||'')}" placeholder="AIza... — grátis em aistudio.google.com">
+      <select data-cfg="geminiModelo" style="margin-top:6px">
         ${["gemini-3.1-flash-lite","gemini-3.1-pro-preview","gemini-2.5-flash"].map(m=>
           `<option ${(S.cfg.geminiModelo||"gemini-3.1-flash-lite")===m?"selected":""}>${m}</option>`).join("")}
       </select>
-      <div class="rot" style="margin-top:4px">Use <b>gemini-3.1-flash-lite</b> no plano gratuito. Se aparecer erro, tente outro da lista.</div>
     </div>
+    <div class="campo"><label>🟣 OpenRouter <span style="color:var(--disp);font-size:11px">GRATUITO</span></label>
+      <input data-cfg="openrouterKey" value="${esc(S.cfg.openrouterKey||'')}" placeholder="sk-or-... — grátis em openrouter.ai">
+    </div>
+    <div class="campo"><label>Chave Claude (foto da capa — opcional)</label>
+      <input data-cfg="apiKey" value="${esc(S.cfg.apiKey)}" placeholder="sk-ant-..."></div>
     <button class="btn mini" data-acao="salvarCfg">Salvar chave</button>
   </div>
 
