@@ -204,7 +204,8 @@ textarea{min-height:86px;resize:vertical}
 .meta{font-size:13px;color:var(--soft);margin-top:2px}
 
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--topo);
- border-top:1px solid rgba(201,162,39,.3);z-index:30;padding-bottom:env(safe-area-inset-bottom)}
+ border-top:1px solid rgba(201,162,39,.3);z-index:30;padding-bottom:env(safe-area-inset-bottom,0px)}
+body:not(.semnav){padding-bottom:calc(68px + env(safe-area-inset-bottom,0px))}
 nav button{flex:1;background:none;border:0;padding:8px 1px 10px;font-size:10px;color:var(--softTopo);cursor:pointer}
 nav button .ico{font-size:19px;margin-bottom:2px}
 nav button.on{color:var(--ouroTopo);font-weight:700}
@@ -1224,7 +1225,7 @@ async function groqChamar(mensagens, modelo){
     method:"POST",
     headers:{"Content-Type":"application/json","Authorization":"Bearer " + key},
     body:JSON.stringify({
-      model: modelo || "meta-llama/llama-4-scout-17b-16e-instruct",
+      model: modelo || "llama-3.3-70b-versatile",
       messages: mensagens,
       max_tokens: 1200,
       temperature: 0.3
@@ -1297,7 +1298,7 @@ async function iaSoTexto(prompt){
       return await openrouterChamar([{role:"user",content:prompt}]);
     }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
   }
-  if(!erros.length) throw new Error("Configure ao menos uma chave de IA em Ajustes (Groq, Gemini ou OpenRouter).");
+  if(!erros.length) throw new Error("Configure uma chave de IA em Ajustes:\n• Groq (console.groq.com)\n• Gemini (aistudio.google.com)\n• OpenRouter (openrouter.ai)\n\nTodas são gratuitas.");
   throw new Error(erros.join(" | "));
 }
 
@@ -1309,7 +1310,7 @@ async function iaComImagem(prompt, base64Img){
       return await groqChamar([{role:"user",content:[
         {type:"text",text:prompt},
         {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}
-      ]}]);
+      ]}], "llama-3.2-90b-vision-preview");
     }catch(e){ if(e.message!=="sem-chave") erros.push("Groq: "+e.message); }
   }
   /* Gemini */
@@ -1330,8 +1331,8 @@ async function iaComImagem(prompt, base64Img){
       ]}], "meta-llama/llama-3.2-11b-vision-instruct:free");
     }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
   }
-  if(!erros.length) throw new Error("Configure ao menos uma chave de IA em Ajustes (Groq, Gemini ou OpenRouter).");
-  throw new Error(erros.join(" | "));
+  if(!erros.length) throw new Error("Configure uma chave de IA em Ajustes (Groq, Gemini ou OpenRouter).");
+  throw new Error("Todas as IAs falharam:\n" + erros.join("\n"));
 }
 
 /* Lê a página interna ou capa e preenche campos */
@@ -2118,9 +2119,9 @@ TELAS.cadastro = () => {
              <button class="btn mini" data-acao="fotoDaCapa">📸 Fotografar a capa</button>
              <button class="btn mini sec" data-acao="fotoCapa">Escolher imagem</button>
            </div>`}
-      ${S.cfg.geminiKey ? `<button class="btn" data-acao="lerPaginaInterna"
-        style="width:100%;margin-top:10px">📷 Fotografar capa ou página interna</button>
-        <div class="rot" style="margin-top:4px">Fotografe a página CIP/direitos do livro. A IA preenche os campos faltantes.</div>` : ""}
+      ${(S.cfg.geminiKey||S.cfg.groqKey||S.cfg.openrouterKey) ? `<button class="btn" data-acao="lerPaginaInterna"
+        style="width:100%;margin-top:10px">📷 Ler página interna / CIP</button>
+        <div class="rot" style="margin-top:4px">Fotografe a página CIP ou a capa. A IA preenche os campos faltantes.</div>` : ""}
     </div>
     ${campo("Título","titulo")}${campo("Autor","autor")}
     <div class="dupla">${campo("Editora","editora")}${campo("Ano","ano")}</div>
@@ -2320,8 +2321,8 @@ TELAS.obra = () => {
           ${o.isbn ? `<button class="chip" data-acao="capaInternetFicha">🌐</button>` : ""}
           ${(o.capa||o.capaUrl) ? `<button class="chip" data-acao="capaRemoverFicha">✕</button>` : ""}
         </div>
-        ${S.cfg.geminiKey ? `<button class="chip" style="margin-top:8px;width:100%;text-align:center"
-          data-acao="lerPaginaFicha">📖 Ler página interna (Gemini)</button>` : ""}
+        ${(S.cfg.geminiKey||S.cfg.groqKey||S.cfg.openrouterKey) ? `<button class="chip" style="margin-top:8px;width:100%;text-align:center"
+          data-acao="lerPaginaFicha">📖 Ler página interna</button>` : ""}
       </div>
       <div style="flex:1;min-width:0"><h2 style="margin-bottom:4px">${esc(o.titulo)}</h2>
         <div class="rot">${esc(o.autor||"Autor não informado")}</div></div>
@@ -3495,6 +3496,9 @@ const ACOES = {
 
   /* ajustes */
   salvarCfg: async () => {
+    // coletar todos os campos incluindo as chaves de IA
+    const novasCfg = {};
+    document.querySelectorAll("[data-cfg]").forEach(i => { novasCfg[i.dataset.cfg] = i.value; });
     if(!exigeAdmin()) return;
     document.querySelectorAll("[data-cfg]").forEach(i => {
       const k = i.dataset.cfg;
