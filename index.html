@@ -499,7 +499,7 @@ async function todos(loja){ const s = await FB.F.getDocs(refCol(loja)); return s
 async function limpar(loja){ const s = await FB.F.getDocs(refCol(loja)); await Promise.all(s.docs.map(d=>FB.F.deleteDoc(d.ref))); }
 
 const S = { obras:[], alunos:[], emprestimos:[], pedidos:[],
-  cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", geminiKey:"", geminiModelo:"gemini-3.1-flash-lite", groqKey:"", openrouterKey:"", logo:""} };
+  cfg:{escola:"Biblioteca escolar", prazo:7, proxReg:1, apiKey:"", geminiKey:"", geminiModelo:"gemini-2.0-flash-lite", groqKey:"", openrouterKey:"", openrouterModelo:"meta-llama/llama-3.3-70b-instruct:free", cfAccount:"", cfToken:"", logo:""} };
 let tela = "inicio", ctx = {};
 
 const refCfg = () => FB.F.doc(FB.db, "bibliotecas", bid(), "config", "config");
@@ -1212,175 +1212,149 @@ function acharEdicao(r){
   return "";
 }
 
-/* IA gratuita: Gemini, Groq e OpenRouter — tenta na ordem que tiver chave.
-   Groq: chave grátis em console.groq.com
-   OpenRouter: chave grátis em openrouter.ai (modelos marcados com :free)
-   Gemini: chave grátis em aistudio.google.com */
+/* =====================================================
+   Provedores de IA gratuitos — tenta em cascata
+   Groq       → console.groq.com      (gsk_...)
+   OpenRouter → openrouter.ai         (sk-or-...)
+   Gemini     → aistudio.google.com   (AIza...)
+   Mistral    → console.mistral.ai    (...)
+   ===================================================== */
 
-/* ---------- Groq (Llama 3.2 Vision) ---------- */
-async function groqChamar(mensagens, modelo){
+const GROQ_TEXTO = ["llama-3.1-8b-instant","llama3-8b-8192","llama-3.1-70b-versatile","llama3-70b-8192","mixtral-8x7b-32768","gemma2-9b-it"];
+const GROQ_VISAO = ["llama-3.2-11b-vision-preview","llama-3.2-90b-vision-preview"];
+
+/* ---------- Groq: tenta vários modelos até um funcionar ---------- */
+async function groqChamar(mensagens, modeloForcado){
   const key = (S.cfg.groqKey||"").trim();
   if(!key) throw new Error("sem-chave");
-  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":"Bearer " + key},
-    body:JSON.stringify({
-      model: modelo || "llama-3.3-70b-versatile",
-      messages: mensagens,
-      max_tokens: 1200,
-      temperature: 0.3
-    })});
-  if(!r.ok){
-    const e = await r.json().catch(()=>({}));
-    throw new Error("Groq: " + ((e.error&&e.error.message)||r.status));
+  const lista = modeloForcado ? [modeloForcado] : GROQ_TEXTO;
+  let ultimo = "";
+  for(const modelo of lista){
+    try{
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+        body:JSON.stringify({model:modelo, messages:mensagens, max_tokens:1200, temperature:0.3})});
+      if(r.ok){
+        const j = await r.json();
+        return j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||"";
+      }
+      const e = await r.json().catch(()=>({}));
+      ultimo = (e.error&&e.error.message)||("status "+r.status);
+      const naoExiste = ultimo.includes("does not exist")||ultimo.includes("not found")||ultimo.includes("model_not_found");
+      if(!naoExiste) throw new Error("Groq ("+modelo+"): "+ultimo);
+    }catch(err){
+      const naoExiste = err.message.includes("does not exist")||err.message.includes("not found")||err.message.includes("model_not_found");
+      if(!naoExiste) throw err;
+      ultimo = err.message;
+    }
   }
-  const j = await r.json();
-  return j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||"";
+  throw new Error("Groq: nenhum modelo funcionou. "+ultimo);
 }
 
-/* ---------- OpenRouter (modelos gratuitos) ---------- */
-async function openrouterChamar(mensagens, modelo){
+/* ---------- OpenRouter: usa o roteador automático free ---------- */
+async function openrouterChamar(mensagens, modeloForcado){
   const key = (S.cfg.openrouterKey||"").trim();
   if(!key) throw new Error("sem-chave");
+  const modelo = modeloForcado || "openrouter/free";
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method:"POST",
     headers:{
       "Content-Type":"application/json",
-      "Authorization":"Bearer " + key,
+      "Authorization":"Bearer "+key,
       "HTTP-Referer":"https://maxsilva2000.github.io/maximus-biblioteca-escolar/",
       "X-Title":"Maximus Biblioteca Escolar"
     },
-    body:JSON.stringify({
-      model: modelo || "meta-llama/llama-3.2-11b-vision-instruct:free",
-      messages: mensagens,
-      max_tokens: 1200
-    })});
+    body:JSON.stringify({model:modelo, messages:mensagens, max_tokens:1200})});
   if(!r.ok){
     const e = await r.json().catch(()=>({}));
-    throw new Error("OpenRouter: " + ((e.error&&e.error.message)||r.status));
+    throw new Error("OpenRouter: "+((e.error&&e.error.message)||r.status));
   }
   const j = await r.json();
   return j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||"";
 }
 
-/* ---------- Gemini ---------- */
-async function geminiChamar(partes){
+/* ---------- Gemini: flash apenas (sem Pro, evita cota) ---------- */
+const GEMINI_FLASH = ["gemini-2.0-flash-lite","gemini-2.0-flash","gemini-1.5-flash-latest"];
+async function geminiChamar(partes, modeloForcado){
   const key = (S.cfg.geminiKey||"").trim();
   if(!key) throw new Error("sem-chave");
-  const r = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    + (S.cfg.geminiModelo||"gemini-3.1-flash-lite") + ":generateContent?key=" + key,
-    {method:"POST", headers:{"Content-Type":"application/json"},
-     body:JSON.stringify({contents:[{parts:partes}]})});
-  if(!r.ok){
-    const e = await r.json().catch(()=>({}));
-    throw new Error("Gemini: "+((e.error&&e.error.message)||r.status));
+  const lista = modeloForcado ? [modeloForcado] : GEMINI_FLASH;
+  let ultimo = "";
+  for(const modelo of lista){
+    try{
+      const r = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/"+modelo+":generateContent?key="+key,
+        {method:"POST",headers:{"Content-Type":"application/json"},
+         body:JSON.stringify({contents:[{parts:partes}]})});
+      if(r.ok){
+        const j = await r.json();
+        return (((j.candidates||[])[0]||{}).content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].text)||"";
+      }
+      const e = await r.json().catch(()=>({}));
+      ultimo = (e.error&&e.error.message)||("status "+r.status);
+      const naoExiste = ultimo.includes("not found")||ultimo.includes("not exist");
+      if(!naoExiste) throw new Error("Gemini ("+modelo+"): "+ultimo);
+    }catch(err){
+      const naoExiste = err.message.includes("not found")||err.message.includes("not exist");
+      if(!naoExiste) throw err;
+      ultimo = err.message;
+    }
   }
-  const j = await r.json();
-  return (((j.candidates||[])[0]||{}).content&&j.candidates[0].content.parts&&j.candidates[0].content.parts[0]&&j.candidates[0].content.parts[0].text)||"";
+  throw new Error("Gemini: "+ultimo);
 }
 
-/* ---------- Roteador: tenta os provedores com chave configurada ---------- */
+/* ---------- Mistral: grátis em console.mistral.ai ---------- */
+async function mistralChamar(mensagens, modeloForcado){
+  const key = (S.cfg.mistralKey||"").trim();
+  if(!key) throw new Error("sem-chave");
+  const r = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+    body:JSON.stringify({model:modeloForcado||"mistral-small-latest", messages:mensagens, max_tokens:1200})});
+  if(!r.ok){
+    const e = await r.json().catch(()=>({}));
+    throw new Error("Mistral: "+((e.error&&e.error.message)||r.status));
+  }
+  const j = await r.json();
+  return j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||"";
+}
+
+/* ---------- Roteador: tenta na ordem que tiver chave configurada ---------- */
+const ERRO_SEM_CHAVE = e => e.message === "sem-chave";
+
 async function iaSoTexto(prompt){
   const erros = [];
-  if(S.cfg.groqKey){
-    try{
-      return await groqChamar([{role:"user",content:prompt}]);
-    }catch(e){ if(e.message!=="sem-chave") erros.push("Groq: "+e.message); }
-  }
-  if(S.cfg.geminiKey){
-    try{
-      return await geminiChamar([{text:prompt}]);
-    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
-  }
-  if(S.cfg.openrouterKey){
-    try{
-      return await openrouterChamar([{role:"user",content:prompt}]);
-    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
-  }
-  if(!erros.length) throw new Error("Configure uma chave de IA em Ajustes:\n• Groq (console.groq.com)\n• Gemini (aistudio.google.com)\n• OpenRouter (openrouter.ai)\n\nTodas são gratuitas.");
-  throw new Error(erros.join(" | "));
+  if(S.cfg.groqKey)       try{ return await groqChamar([{role:"user",content:prompt}]);         }catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  if(S.cfg.openrouterKey) try{ return await openrouterChamar([{role:"user",content:prompt}]);    }catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  if(S.cfg.geminiKey)     try{ return await geminiChamar([{text:prompt}]);                       }catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  if(S.cfg.mistralKey)    try{ return await mistralChamar([{role:"user",content:prompt}]);       }catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  if(!erros.length) throw new Error("Configure uma chave de IA em Ajustes:\n• Groq (console.groq.com)\n• OpenRouter (openrouter.ai)\n• Gemini (aistudio.google.com)\n• Mistral (console.mistral.ai)\nTodas são gratuitas.");
+  throw new Error("Todas as IAs falharam:\n"+erros.join("\n"));
 }
 
 async function iaComImagem(prompt, base64Img){
   const erros = [];
-  /* Groq com Llama 4 Scout (visão + grátis) */
   if(S.cfg.groqKey){
-    try{
-      return await groqChamar([{role:"user",content:[
-        {type:"text",text:prompt},
-        {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}
-      ]}], "llama-3.2-90b-vision-preview");
-    }catch(e){ if(e.message!=="sem-chave") erros.push("Groq: "+e.message); }
-  }
-  /* Gemini */
-  if(S.cfg.geminiKey){
-    try{
-      return await geminiChamar([
-        {text:prompt},
-        {inline_data:{mime_type:"image/jpeg",data:base64Img}}
-      ]);
-    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
-  }
-  /* OpenRouter com Llama Vision :free */
-  if(S.cfg.openrouterKey){
-    try{
-      return await openrouterChamar([{role:"user",content:[
-        {type:"text",text:prompt},
-        {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}
-      ]}], "meta-llama/llama-3.2-11b-vision-instruct:free");
-    }catch(e){ if(e.message!=="sem-chave") erros.push(e.message); }
-  }
-  if(!erros.length) throw new Error("Configure uma chave de IA em Ajustes (Groq, Gemini ou OpenRouter).");
-  throw new Error("Todas as IAs falharam:\n" + erros.join("\n"));
-}
-
-/* Lê a página interna ou capa e preenche campos */
-async function geminiLerPagina(base64Img, campos, contexto){
-  let imgData = base64Img;
-  try{
-    const blob = await (await fetch("data:image/jpeg;base64,"+base64Img)).blob();
-    const menor = await reduzir(blob, 1200, 0.82);
-    imgData = menor.split(",")[1];
-  }catch(e){}
-
-  const prompt = "Esta imagem pode ser a CAPA ou a pagina de direitos autorais (CIP) de um livro. "
-    + "Leia o texto visivel e extraia em JSON: "
-    + campos.filter(c=>c!=="sinopse").join(", ")
-    + (campos.includes("sinopse") ? ", sinopse (se houver resumo visivel)" : "")
-    + ". Retorne SOMENTE JSON valido, sem markdown. "
-    + 'Ex: {"autor":"Ana Maria Machado","paginas":"128","edicao":"3a edicao","categoria":"Infantil","sinopse":"Texto."} '
-    + "Omita campos nao visiveis.";
-
-  let resultado = {};
-  try{
-    const txt = await iaComImagem(prompt, imgData);
-    const m = txt.match(/\{[\s\S]*\}/);
-    if(m) resultado = JSON.parse(m[0]);
-  }catch(e){ throw e; }
-
-  if(campos.includes("sinopse") && !resultado.sinopse){
-    const titulo = (contexto&&contexto.titulo)||resultado.titulo||"";
-    const autor = resultado.autor||(contexto&&contexto.autor)||"";
-    const cat = resultado.categoria||(contexto&&contexto.categoria)||"";
-    if(titulo){
-      try{
-        const s = await geminiGerarSinopse(titulo, autor, "", cat);
-        if(s){ resultado.sinopse = s; resultado._gerada = true; }
-      }catch(e){}
+    for(const mv of GROQ_VISAO){
+      try{ return await groqChamar([{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}]}], mv); }
+      catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push("Groq/"+mv+": "+e.message); }
     }
   }
-  return resultado;
-}
-
-/* Gera sinopse sem foto */
-async function geminiGerarSinopse(titulo, autor, editora, categoria){
-  if(!titulo) throw new Error("Preencha o titulo antes de gerar a sinopse.");
-  const prompt = "Escreva uma sinopse de 3 a 4 frases em portugues para o livro \""
-    + titulo + "\""
-    + (autor?" de "+autor:"")+(editora?", editora "+editora:"")+(categoria?", genero "+categoria:"")
-    + ". Estilo de contracapa, sem spoilers. Responda SOMENTE com o texto da sinopse.";
-  return (await iaSoTexto(prompt)||"").trim();
+  if(S.cfg.openrouterKey){
+    try{ return await openrouterChamar([{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}]}], "qwen/qwen2.5-vl-3b-instruct:free"); }
+    catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  }
+  if(S.cfg.geminiKey){
+    try{ return await geminiChamar([{text:prompt},{inline_data:{mime_type:"image/jpeg",data:base64Img}}]); }
+    catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  }
+  if(S.cfg.mistralKey){
+    try{ return await mistralChamar([{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:"data:image/jpeg;base64,"+base64Img}}]}], "pixtral-12b-2409"); }
+    catch(e){ if(!ERRO_SEM_CHAVE(e)) erros.push(e.message); }
+  }
+  if(!erros.length) throw new Error("Configure uma chave de IA com suporte a imagem em Ajustes.");
+  throw new Error("IAs falharam:\n"+erros.join("\n"));
 }
 
 async function sinopseNoGoogle(isbn, titulo){
@@ -2667,10 +2641,7 @@ TELAS.ajustes = () => ehAluno() ? `
     </div>
     <div class="campo"><label>🔵 Google Gemini <span style="color:var(--disp);font-size:11px">GRATUITO</span></label>
       <input data-cfg="geminiKey" value="${esc(S.cfg.geminiKey||'')}" placeholder="AIza... — grátis em aistudio.google.com">
-      <select data-cfg="geminiModelo" style="margin-top:6px">
-        ${["gemini-3.1-flash-lite","gemini-3.1-pro-preview","gemini-2.5-flash"].map(m=>
-          `<option ${(S.cfg.geminiModelo||"gemini-3.1-flash-lite")===m?"selected":""}>${m}</option>`).join("")}
-      </select>
+<div class="rot" style="margin-top:4px">Usa flash-lite → 2.5-flash automaticamente</div>
     </div>
     <div class="campo"><label>🟣 OpenRouter <span style="color:var(--disp);font-size:11px">GRATUITO</span></label>
       <input data-cfg="openrouterKey" value="${esc(S.cfg.openrouterKey||'')}" placeholder="sk-or-... — grátis em openrouter.ai">
